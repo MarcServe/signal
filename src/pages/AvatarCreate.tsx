@@ -13,6 +13,8 @@ export function AvatarCreate() {
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   /** Local blob URL while a new file is uploading (revoked after upload ends). */
   const [pickerPreview, setPickerPreview] = useState<string | null>(null)
+  const [refineTab, setRefineTab] = useState<'auto' | 'custom'>('auto')
+  const [customInstruction, setCustomInstruction] = useState('')
 
   // Never redirect while profile is still loading — `profile?.role !== 'artist'` is true when profile is null,
   // which previously sent artists to `/` before they could upload.
@@ -166,7 +168,7 @@ export function AvatarCreate() {
     }
   }
 
-  const handleEnhanceLatest = async () => {
+  const handleEnhanceLatest = async (enhanceInstruction?: string) => {
     // Preview can show profile.avatar_url; Enhance previously only looked at latestUploadUrl (set on new upload).
     const imageUrlForEnhance = latestUploadUrl ?? profile.avatar_url ?? null
     if (!imageUrlForEnhance?.trim()) {
@@ -202,6 +204,7 @@ export function AvatarCreate() {
       }
       let apiRes: Response
       try {
+        const trimmedInstr = enhanceInstruction?.trim()
         apiRes = await fetch(apiUrl('/avatar-generate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -210,6 +213,7 @@ export function AvatarCreate() {
             image_url: imageUrlForEnhance,
             mode: 'enhance',
             provider: 'gemini',
+            ...(trimmedInstr ? { enhance_instruction: trimmedInstr.slice(0, 800) } : {}),
           }),
         })
       } catch {
@@ -312,17 +316,65 @@ export function AvatarCreate() {
           </summary>
           <div className="px-4 pb-4 pt-0 border-t border-[var(--signal-silver-light)]/70">
             <p className="pt-3 text-xs text-[var(--signal-ink-muted)] leading-relaxed">
-              Studio-style pass (Gemini). Needs <code className="text-[10px]">dev:vercel</code> on :3000 and{' '}
-              <code className="text-[10px]">GEMINI_API_KEY</code>.
+              Studio-style pass (Gemini). Auto mode always includes gentle skin smoothing. Needs{' '}
+              <code className="text-[10px]">dev:vercel</code> on :3000 and <code className="text-[10px]">GEMINI_API_KEY</code>.
             </p>
-            <button
-              type="button"
-              onClick={handleEnhanceLatest}
-              disabled={uploading || enhancing}
-              className="mt-4 w-full sm:w-auto min-w-[12rem] py-3 px-4 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium tracking-wide disabled:opacity-50 hover:opacity-90"
-            >
-              {enhancing ? 'Working…' : 'Run refinement'}
-            </button>
+            <div className="mt-4 flex rounded-xl border border-[var(--signal-silver-light)] overflow-hidden p-0.5 bg-[var(--signal-silver-light)]/20">
+              <button
+                type="button"
+                onClick={() => setRefineTab('auto')}
+                className={`flex-1 py-2 text-xs font-medium rounded-lg transition-colors ${
+                  refineTab === 'auto'
+                    ? 'bg-[var(--signal-white-pure)] text-[var(--signal-ink)] shadow-sm'
+                    : 'text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)]'
+                }`}
+              >
+                Auto enhance
+              </button>
+              <button
+                type="button"
+                onClick={() => setRefineTab('custom')}
+                className={`flex-1 py-2 text-xs font-medium rounded-lg transition-colors ${
+                  refineTab === 'custom'
+                    ? 'bg-[var(--signal-white-pure)] text-[var(--signal-ink)] shadow-sm'
+                    : 'text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)]'
+                }`}
+              >
+                Chat instructions
+              </button>
+            </div>
+            {refineTab === 'auto' ? (
+              <button
+                type="button"
+                onClick={() => void handleEnhanceLatest(undefined)}
+                disabled={uploading || enhancing}
+                className="mt-4 w-full sm:w-auto min-w-[12rem] py-3 px-4 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium tracking-wide disabled:opacity-50 hover:opacity-90"
+              >
+                {enhancing ? 'Working…' : 'Run auto enhance'}
+              </button>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <label className="block text-xs font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
+                  Tell the model what to change
+                </label>
+                <textarea
+                  value={customInstruction}
+                  onChange={(e) => setCustomInstruction(e.target.value)}
+                  placeholder="e.g. Warmer skin tones, softer background, a bit more rim light, keep my expression…"
+                  rows={4}
+                  disabled={uploading || enhancing}
+                  className="w-full rounded-xl border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-3 py-2.5 text-sm text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleEnhanceLatest(customInstruction)}
+                  disabled={uploading || enhancing || !customInstruction.trim()}
+                  className="w-full sm:w-auto min-w-[12rem] py-3 px-4 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium tracking-wide disabled:opacity-50 hover:opacity-90"
+                >
+                  {enhancing ? 'Working…' : 'Apply with instructions'}
+                </button>
+              </div>
+            )}
           </div>
         </details>
         {message && (

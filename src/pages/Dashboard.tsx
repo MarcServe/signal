@@ -33,11 +33,16 @@ export function Dashboard() {
   const [artist, setArtist] = useState<{
     id: string
     display_name: string
+    handle: string | null
     bio: string | null
     profile_visible?: boolean
     stripe_account_id?: string | null
     stripe_onboarding_complete?: boolean
   } | null>(null)
+  const [displayNameDraft, setDisplayNameDraft] = useState('')
+  const [handleDraft, setHandleDraft] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileNotice, setProfileNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [bioDraft, setBioDraft] = useState('')
   const [bioSaving, setBioSaving] = useState(false)
   const [bioResearchLoading, setBioResearchLoading] = useState(false)
@@ -115,7 +120,7 @@ export function Dashboard() {
     setArtistLoaded(false)
     supabase
       .from('artists')
-      .select('id, display_name, bio, stripe_account_id, stripe_onboarding_complete')
+      .select('id, display_name, handle, bio, stripe_account_id, stripe_onboarding_complete')
       .eq('user_id', user.id)
       .maybeSingle()
       .then(async ({ data, error }) => {
@@ -161,6 +166,12 @@ export function Dashboard() {
     setBioDraft(artist.bio ?? '')
   }, [artist?.id, artist?.bio])
 
+  useEffect(() => {
+    if (!artist) return
+    setDisplayNameDraft(artist.display_name)
+    setHandleDraft((artist.handle ?? '').replace(/^@+/, ''))
+  }, [artist?.id, artist?.display_name, artist?.handle])
+
   if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)]">
@@ -198,7 +209,8 @@ export function Dashboard() {
     )
   }
 
-  const displayName = artist?.display_name ?? profile.full_name ?? 'Artist'
+  const displayNameForBio =
+    displayNameDraft.trim() || artist?.display_name || profile.full_name?.trim() || 'Artist'
   const artistId = artist?.id
 
   return (
@@ -221,20 +233,102 @@ export function Dashboard() {
                 </div>
               )}
             </Link>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-3xl font-semibold text-[var(--signal-ink)] tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
-                {displayName}
-              </h1>
-              <p className="mt-2 text-[var(--signal-ink-muted)] text-sm leading-relaxed">
-                <Link
-                  to="/avatar/create"
-                  className="text-sm text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] hover:border-[var(--signal-gold)] hover:text-[var(--signal-ink)] transition-colors"
+            <div className="flex-1 min-w-0 space-y-3">
+              <div>
+                <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide mb-1">
+                  Display name
+                </label>
+                <input
+                  type="text"
+                  value={displayNameDraft}
+                  onChange={(e) => {
+                    setDisplayNameDraft(e.target.value)
+                    setProfileNotice(null)
+                  }}
+                  placeholder="Your artist name"
+                  className="w-full text-2xl sm:text-3xl font-semibold text-[var(--signal-ink)] tracking-tight bg-transparent border-b border-[var(--signal-silver-light)] pb-1 focus:outline-none focus:border-[var(--signal-gold)] focus:ring-0 placeholder:text-[var(--signal-ink-muted)]/50"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                  disabled={!artist}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide mb-1">
+                  Handle <span className="font-normal normal-case text-[var(--signal-ink-muted)]">(optional, public @name)</span>
+                </label>
+                <div className="flex items-center gap-1 max-w-md">
+                  <span className="text-sm text-[var(--signal-ink-muted)]" aria-hidden>
+                    @
+                  </span>
+                  <input
+                    type="text"
+                    value={handleDraft}
+                    onChange={(e) => {
+                      setHandleDraft(e.target.value.replace(/^@+/, ''))
+                      setProfileNotice(null)
+                    }}
+                    placeholder="yourhandle"
+                    className="flex-1 text-sm text-[var(--signal-ink)] bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+                    disabled={!artist}
+                  />
+                </div>
+              </div>
+              {profileNotice && (
+                <p
+                  className={`text-sm ${profileNotice.type === 'err' ? 'text-red-600' : 'text-[var(--signal-gold)]'}`}
+                  role="status"
                 >
-                  Portrait
-                </Link>
-                <span className="mx-2">·</span>
-                <span>Same image on discovery cards — refine it on the Portrait page</span>
-              </p>
+                  {profileNotice.text}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={!artist || profileSaving || !displayNameDraft.trim()}
+                  onClick={async () => {
+                    if (!artist?.id || !user?.id) return
+                    setProfileSaving(true)
+                    setProfileNotice(null)
+                    const disp = displayNameDraft.trim()
+                    const handleNorm = handleDraft.trim().replace(/^@+/, '') || null
+                    const { error: aErr } = await supabase
+                      .from('artists')
+                      .update({ display_name: disp, handle: handleNorm })
+                      .eq('id', artist.id)
+                    if (aErr) {
+                      setProfileSaving(false)
+                      setProfileNotice({ type: 'err', text: aErr.message })
+                      return
+                    }
+                    const { error: uErr } = await supabase.from('users').update({ full_name: disp }).eq('id', user.id)
+                    setProfileSaving(false)
+                    if (uErr) {
+                      setProfileNotice({
+                        type: 'err',
+                        text: `Artist name saved; account name not updated: ${uErr.message}`,
+                      })
+                      setArtist((prev) => (prev ? { ...prev, display_name: disp, handle: handleNorm } : null))
+                      await refreshProfile()
+                      return
+                    }
+                    setArtist((prev) => (prev ? { ...prev, display_name: disp, handle: handleNorm } : null))
+                    await refreshProfile()
+                    setProfileNotice({ type: 'ok', text: 'Profile saved.' })
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {profileSaving ? 'Saving…' : 'Save name & handle'}
+                </button>
+                <p className="text-[var(--signal-ink-muted)] text-sm leading-relaxed">
+                  <Link
+                    to="/avatar/create"
+                    className="text-sm text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] hover:border-[var(--signal-gold)] hover:text-[var(--signal-ink)] transition-colors"
+                  >
+                    Portrait
+                  </Link>
+                  <span className="mx-2">·</span>
+                  <span>Same image on discovery cards — refine on the Portrait page</span>
+                </p>
+              </div>
             </div>
           </div>
           {!artist && (
@@ -286,7 +380,7 @@ export function Dashboard() {
                 onClick={async () => {
                   setBioNotice(null)
                   setBioPolishLoading(true)
-                  const r = await polishArtistBioDraft(bioDraft, displayName)
+                  const r = await polishArtistBioDraft(bioDraft, displayNameForBio)
                   setBioPolishLoading(false)
                   if (!r.ok) {
                     setBioNotice({ type: 'err', text: r.error })
@@ -304,9 +398,9 @@ export function Dashboard() {
                 disabled={bioResearchLoading || bioPolishLoading}
                 onClick={async () => {
                   setBioNotice(null)
-                  const q = displayName.trim()
+                  const q = displayNameForBio.trim()
                   if (!q) {
-                    setBioNotice({ type: 'err', text: 'Set a display name on your artist profile first.' })
+                    setBioNotice({ type: 'err', text: 'Set a display name above first.' })
                     return
                   }
                   setBioResearchLoading(true)

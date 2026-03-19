@@ -45,7 +45,11 @@ export default async function handler(
       return
     }
     const audioBuffer = await response.arrayBuffer()
-    const resAny = res as { status: (n: number) => void; setHeader: (a: string, b: string) => void; end: (b?: Buffer) => void }
+    const resAny = res as unknown as {
+      status: (n: number) => void
+      setHeader: (a: string, b: string) => void
+      end: (b?: Buffer) => void
+    }
     resAny.status(200)
     resAny.setHeader('Content-Type', 'audio/mpeg')
     resAny.end(Buffer.from(audioBuffer))

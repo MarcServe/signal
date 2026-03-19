@@ -41,7 +41,11 @@ export const DEMO_ARTIST_PROFILES: Record<string, DemoArtistProfile> = {
     display_name: 'DJ KRUST',
     handle: 'djkrust',
     avatar_url: card(1),
-    bio: 'Electronic producer and DJ. Blending ambient textures with driving beats. Based in London.',
+    bio: `Krust (Kirk Thompson) is a pioneering English drum & bass producer, DJ, and co-owner of the Full Cycle record label. He’s widely regarded as one of the founders of jungle and drum & bass, known for his distinctive sound and influential tracks like Warhead and Soul in Motion.
+
+He has released over 100 tracks and multiple albums, and was part of the Mercury Prize-winning group Reprazent. Alongside music, he runs a creative consultancy (Disruptive Patterns) and co-owns a CBD company (Amma Life).
+
+After a quieter period focused on personal development and coaching, he returned to music around 2016, releasing new work including his 2020 album Edge of Everything.`,
     events: [
       { id: 'demo-e1-a', title: 'DJ KRUST · Night Drive', image_url: card(1), starts_at: nextWeek },
       { id: 'demo-e1-b', title: 'DJ KRUST · Studio Session', image_url: card(1), starts_at: nextMonth },

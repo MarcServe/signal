@@ -111,15 +111,14 @@ Serverless routes in `api/` are ready for production. Set the env vars in `.env.
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/api/health` | GET | Health check (`{ ok: true }`) |
 | `/api/stripe-connect` | POST | Create Stripe Connect account link (artist onboarding) |
 | `/api/stripe-checkout` | POST | Create Stripe Checkout Session (purchase or subscription) |
 | `/api/stripe-webhook` | POST | Stripe webhook (configure in Stripe Dashboard) |
 | `/api/avatar-generate` | POST | Store avatar; `mode: "enhance"` + `provider: "gemini"` uses **Gemini** native image (set `GEMINI_API_KEY`; optional `GEMINI_IMAGE_MODEL`) |
 | `/api/product-image-generate` | POST | Body `{ "product_id", "artist_id" }` — **Gemini** text-to-image cover, uploads to Storage (`avatars` bucket `product-covers/…`), updates `products.image_url` |
-| `/api/artist-bio-research` | POST | Body `{ "query": "Artist Name" }` — short bio via **Perplexity** (`PERPLEXITY_API_KEY`) or **Wikipedia** fallback; requires `Authorization: Bearer` (Supabase JWT) |
-| `/api/artist-bio-polish` | POST | Body `{ "draft": "…", "display_name"?: "…" }` — tightens the artist’s **own notes** with **Gemini** text (`GEMINI_API_KEY`; optional `GEMINI_TEXT_MODEL`, default `gemini-2.0-flash`). No web lookup. |
+| `/api/artist-bio` | POST | Body `{ "action": "research", "query": "…" }` (Perplexity / Wikipedia) or `{ "action": "polish", "draft": "…", "display_name"?: "…" }` (Gemini). Requires `Authorization: Bearer` (Supabase JWT). Env: `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, optional `GEMINI_TEXT_MODEL`. |
 | `/api/avatar-tts` | POST | TTS for avatar (ElevenLabs when key set) |
+| `/api/sync` | GET | Health: `{ ok: true, service: "signal-api" }` |
 | `/api/sync` | POST | Sync catalogue from Bandcamp / Apple Music / Shopify |
 | `/api/payouts-run` | POST | Cron: run artist payouts (optional `Authorization: Bearer CRON_SECRET`) |
 

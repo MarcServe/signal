@@ -28,7 +28,18 @@ async function getUserFromJwt(token: string): Promise<{ id: string } | null> {
 }
 
 export default async function handler(
-  req: { method?: string; body?: { artist_id?: string; image_url?: string; mode?: 'store' | 'enhance'; provider?: 'openai' | 'gemini' }; headers?: { authorization?: string } },
+  req: {
+    method?: string
+    body?: {
+      artist_id?: string
+      image_url?: string
+      mode?: 'store' | 'enhance'
+      provider?: 'openai' | 'gemini'
+      /** Optional hints for Gemini enhance (chat-style instructions). */
+      enhance_instruction?: string
+    }
+    headers?: { authorization?: string }
+  },
   res: { status: (n: number) => { json: (o: object) => void }; setHeader: (a: string, b: string) => void }
 ): Promise<void> {
   res.setHeader('Content-Type', 'application/json')
@@ -46,7 +57,7 @@ export default async function handler(
     res.status(401).json({ error: 'Invalid token' })
     return
   }
-  const { artist_id, image_url, mode, provider } = req.body || {}
+  const { artist_id, image_url, mode, provider, enhance_instruction } = req.body || {}
   if (!artist_id || !image_url) {
     res.status(400).json({ error: 'Missing artist_id or image_url' })
     return
@@ -78,6 +89,7 @@ export default async function handler(
           apiKey: geminiKey,
           sourceImageUrl: image_url,
           model: geminiImageModel,
+          userInstruction: typeof enhance_instruction === 'string' ? enhance_instruction : null,
         })
         const buf = Buffer.from(imageBase64, 'base64')
         const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'

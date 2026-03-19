@@ -7,7 +7,7 @@ import Stripe from 'stripe'
 import { supabaseAdmin } from './lib/supabase.js'
 import { emitEvent } from './lib/automation.js'
 
-const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-11-20.acacia' }) : null
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-02-24.acacia' }) : null
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
 
 async function readBody(req: { on?: (e: string, c: (chunk: Buffer) => void) => void }): Promise<string> {

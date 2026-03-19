@@ -1,6 +1,6 @@
 /**
- * POST /api/sync
- * Sync catalogue from Bandcamp / Apple Music / Shopify. Reads credentials from integrations or env.
+ * GET /api/sync — lightweight health: `{ ok: true, service: 'signal-api' }` (no auth).
+ * POST /api/sync — sync catalogue from Bandcamp / Apple Music / Shopify. Reads credentials from integrations or env.
  * Body: { artist_id, service: 'bandcamp'|'apple_music'|'shopify' }
  * Headers: Authorization: Bearer <jwt>
  */
@@ -23,6 +23,10 @@ export default async function handler(
   res: { status: (n: number) => { json: (o: object) => void }; setHeader: (a: string, b: string) => void }
 ): Promise<void> {
   res.setHeader('Content-Type', 'application/json')
+  if (req.method === 'GET') {
+    res.status(200).json({ ok: true, service: 'signal-api' })
+    return
+  }
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
     return

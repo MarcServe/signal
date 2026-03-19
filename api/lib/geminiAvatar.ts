@@ -24,7 +24,7 @@ IDENTITY — NON-NEGOTIABLE:
 VISUAL DIRECTION:
 - Lighting: soft studio-style portrait lighting — gentle key, subtle fill, mild rim if it helps separation; natural catchlights; eliminate harsh phone-flash or muddy shadows.
 - Color: accurate, healthy skin; correct white balance; tasteful contrast; optional very subtle cinematic grade (warm highlights, neutral shadows) — never heavy or neon.
-- Detail: reduce noise; gently clarify eyes and hair; avoid plastic skin, waxy smoothing, or oversharpening halos.
+- Detail: reduce noise; **always** apply gentle, natural skin smoothing (soften harsh grain, fine texture clutter, and minor blemishes) while keeping real skin character and identity; gently clarify eyes and hair; avoid plastic skin, waxy over-smoothing, or oversharpening halos.
 - Background: if cluttered or low-quality, replace with a clean premium field — smooth gradient from warm ivory to soft pearl gray, or delicate neutral bokeh. Subject must read clearly at small avatar size.
 - Framing: head and upper shoulders, centered, with comfortable headroom for circular crops (keep eyes roughly in the upper third).
 
@@ -36,6 +36,17 @@ STRICTLY FORBIDDEN:
 
 OUTPUT:
 Return exactly one photorealistic square (1:1) portrait suitable as a circular avatar on a music and live-streaming platform.`
+
+/** Base prompt plus optional user instructions (still subject to identity / forbidden rules). */
+export function buildAvatarEnhancePrompt(userInstruction?: string | null): string {
+  const trimmed = userInstruction?.trim()
+  if (!trimmed) return GEMINI_AVATAR_ENHANCE_PROMPT
+  const safe = trimmed.slice(0, 800)
+  return `${GEMINI_AVATAR_ENHANCE_PROMPT}
+
+ADDITIONAL USER DIRECTIONS (apply only when compatible with identity preservation and forbidden rules above):
+${safe}`
+}
 
 export type GeminiEnhanceResult = {
   imageBase64: string
@@ -82,9 +93,13 @@ export async function enhancePortraitWithGemini(params: {
   apiKey: string
   sourceImageUrl: string
   model?: string
+  /** Full prompt override; if omitted, uses buildAvatarEnhancePrompt(userInstruction). */
   prompt?: string
+  /** Short free-text hints (e.g. “warmer light”, “more background blur”). */
+  userInstruction?: string | null
 }): Promise<GeminiEnhanceResult> {
-  const { apiKey, sourceImageUrl, model = DEFAULT_GEMINI_IMAGE_MODEL, prompt = GEMINI_AVATAR_ENHANCE_PROMPT } = params
+  const { apiKey, sourceImageUrl, model = DEFAULT_GEMINI_IMAGE_MODEL, prompt, userInstruction } = params
+  const finalPrompt = prompt ?? buildAvatarEnhancePrompt(userInstruction)
 
   const imgRes = await fetch(sourceImageUrl)
   if (!imgRes.ok) {
@@ -109,7 +124,7 @@ export async function enhancePortraitWithGemini(params: {
       {
         role: 'user',
         parts: [
-          { text: prompt },
+          { text: finalPrompt },
           {
             inlineData: {
               mimeType,
