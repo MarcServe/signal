@@ -99,6 +99,9 @@ export function AvatarCreate() {
         return
       }
 
+      // Storage upload already succeeded — always persist avatar_url to users/artists.
+      // The API syncs server-side history; if it fails (e.g. missing SUPABASE_SERVICE_ROLE_KEY on Vercel),
+      // the profile must still update so the live site shows the new image.
       let savedImageUrl = imageUrl
       let serverAvatarSynced = true
       try {
@@ -126,17 +129,12 @@ export function AvatarCreate() {
           savedImageUrl = imageUrl
           serverAvatarSynced = false
         } else {
-          setMessage({ type: 'error', text: `Avatar save failed: ${apiJson.error ?? `HTTP ${apiRes.status}`}` })
-          return
-        }
-      } catch {
-        if (import.meta.env.DEV) {
           savedImageUrl = imageUrl
           serverAvatarSynced = false
-        } else {
-          setMessage({ type: 'error', text: 'Can’t reach our servers. Check your connection and try again.' })
-          return
         }
+      } catch {
+        savedImageUrl = imageUrl
+        serverAvatarSynced = false
       }
 
       const { error: userUpdateError } = await supabase
@@ -156,7 +154,9 @@ export function AvatarCreate() {
         type: 'success',
         text: serverAvatarSynced
           ? 'Saved.'
-          : 'Saved. Some polish steps need the live app backend — they’ll work automatically when you’re on the deployed app.',
+          : import.meta.env.DEV
+            ? 'Saved locally. Run the app with API routes enabled for full server sync.'
+            : 'Saved to your profile. If the image doesn’t appear everywhere, hard-refresh the page. (Optional: set server env for full sync — see README.)',
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unexpected upload error.'

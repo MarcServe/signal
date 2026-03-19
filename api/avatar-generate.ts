@@ -121,19 +121,14 @@ export default async function handler(
     style: 'default',
   })
   if (insertErr) {
-    // History row is optional for UX: enhancement/upload already produced finalUrl in storage.
-    const enhancementWorked = mode === 'enhance' && finalUrl !== image_url
-    if (enhancementWorked) {
-      console.warn('[avatar-generate] avatars insert skipped:', insertErr.message)
-      res.status(200).json({
-        success: true,
-        image_url: finalUrl,
-        provider: selectedProvider,
-        warning: `Portrait URL is saved for your profile; history log failed: ${insertErr.message}`,
-      })
-      return
-    }
-    res.status(500).json({ error: insertErr.message })
+    // History row is optional: clients update users/artists.avatar_url from storage/API URL.
+    console.warn('[avatar-generate] avatars insert skipped:', insertErr.message)
+    res.status(200).json({
+      success: true,
+      image_url: finalUrl,
+      provider: mode === 'enhance' ? selectedProvider : 'none',
+      warning: `Image URL is ok; history log failed: ${insertErr.message}`,
+    })
     return
   }
   res.status(200).json({ success: true, image_url: finalUrl, provider: mode === 'enhance' ? selectedProvider : 'none' })

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { apiUrl, getSession } from '../lib/api'
 import { fetchArtistBioFromWeb, polishArtistBioDraft } from '../lib/bioResearch'
+import { catalogCardImageUrl } from '../lib/catalogImage'
 
 const MUSIC_INTEGRATION_CARDS = [
   {
@@ -60,12 +61,15 @@ function catalogImagePayload(
 export function Dashboard() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const addIntent = searchParams.get('add')
   const profileRetried = useRef(false)
   const [artist, setArtist] = useState<{
     id: string
     display_name: string
     handle: string | null
     bio: string | null
+    avatar_url?: string | null
     profile_visible?: boolean
     stripe_account_id?: string | null
     stripe_onboarding_complete?: boolean
@@ -163,7 +167,7 @@ export function Dashboard() {
     setArtistLoaded(false)
     supabase
       .from('artists')
-      .select('id, display_name, handle, bio, stripe_account_id, stripe_onboarding_complete')
+      .select('id, display_name, handle, bio, avatar_url, stripe_account_id, stripe_onboarding_complete')
       .eq('user_id', user.id)
       .maybeSingle()
       .then(async ({ data, error }) => {
@@ -209,6 +213,23 @@ export function Dashboard() {
         setFeeFreeToday(new Date(settings.fee_free_until) > new Date())
       })
   }, [user, profile?.role, profile?.avatar_setup_done, navigate])
+
+  /** Open the right Studio form when arriving from the sidebar “+” menu (?add=product|event|membership). */
+  useEffect(() => {
+    if (!addIntent?.trim() || !artist?.id) return
+    const v = addIntent.trim().toLowerCase()
+    if (v === 'product') setAddProductOpen(true)
+    else if (v === 'event') setAddEventOpen(true)
+    else if (v === 'membership' || v === 'tier') setAddTierOpen(true)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('add')
+        return next
+      },
+      { replace: true }
+    )
+  }, [addIntent, artist?.id, setSearchParams])
 
   useEffect(() => {
     if (!artist) return
@@ -261,6 +282,8 @@ export function Dashboard() {
   const displayNameForBio =
     displayNameDraft.trim() || artist?.display_name || profile.full_name?.trim() || 'Artist'
   const artistId = artist?.id
+  /** Fallback for catalog cards when product/event/tier has no image yet (same idea as demo artists). */
+  const catalogPortrait = profile?.avatar_url ?? artist?.avatar_url ?? null
 
   return (
     <div className="min-h-screen bg-[var(--signal-white)]">
@@ -275,7 +298,12 @@ export function Dashboard() {
               aria-label="Portrait — add or change your photo"
             >
               {profile.avatar_url ? (
-                <img src={profile.avatar_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                <img
+                  key={profile.avatar_url}
+                  src={profile.avatar_url}
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center text-[var(--signal-ink-muted)] text-xs text-center px-2 leading-snug">
                   Add portrait
@@ -675,14 +703,17 @@ export function Dashboard() {
             </div>
           ) : events.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {events.map((ev) => (
+              {events.map((ev) => {
+                const evCardImg = catalogCardImageUrl(ev.image_url, catalogPortrait)
+                const evCleanSource = ev.image_url?.trim() || catalogPortrait
+                return (
                 <div
                   key={ev.id}
                   className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
                 >
                   <div className="relative aspect-video bg-[var(--signal-silver-light)]/40">
-                    {ev.image_url ? (
-                      <img src={ev.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                    {evCardImg ? (
+                      <img src={evCardImg} alt="" className="absolute inset-0 h-full w-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center p-4">
                         <span className="text-sm font-medium text-[var(--signal-ink)] text-center">{ev.title}</span>
@@ -774,12 +805,12 @@ export function Dashboard() {
                       >
                         {catalogBusy?.kind === 'event' && catalogBusy.id === ev.id ? '…' : 'Generate'}
                       </button>
-                      {ev.image_url && (
+                      {evCleanSource && (
                         <button
                           type="button"
                           disabled={catalogBusy !== null || !artistId}
                           onClick={async () => {
-                            if (!artistId || !ev.image_url) return
+                            if (!artistId || !evCleanSource) return
                             setCatalogImageNotice(null)
                             setCatalogBusy({ kind: 'event', id: ev.id })
                             try {
@@ -797,7 +828,7 @@ export function Dashboard() {
                                 },
                                 body: JSON.stringify(
                                   catalogImagePayload(artistId, 'event', ev.id, {
-                                    source_image_url: ev.image_url,
+                                    source_image_url: evCleanSource,
                                     creative_prompt: hint || undefined,
                                   })
                                 ),
@@ -829,7 +860,8 @@ export function Dashboard() {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           ) : null}
         </section>
@@ -918,14 +950,17 @@ export function Dashboard() {
             </div>
           ) : memberships.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {memberships.map((m) => (
+              {memberships.map((m) => {
+                const mCardImg = catalogCardImageUrl(m.image_url, catalogPortrait)
+                const mCleanSource = m.image_url?.trim() || catalogPortrait
+                return (
                 <div
                   key={m.id}
                   className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
                 >
                   <div className="relative aspect-[3/4] bg-[var(--signal-silver-light)]/40">
-                    {m.image_url ? (
-                      <img src={m.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                    {mCardImg ? (
+                      <img src={mCardImg} alt="" className="absolute inset-0 h-full w-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
                         <span className="text-sm font-medium text-[var(--signal-ink)]">{m.title}</span>
@@ -1015,12 +1050,12 @@ export function Dashboard() {
                       >
                         {catalogBusy?.kind === 'membership' && catalogBusy.id === m.id ? '…' : 'Generate'}
                       </button>
-                      {m.image_url && (
+                      {mCleanSource && (
                         <button
                           type="button"
                           disabled={catalogBusy !== null || !artistId}
                           onClick={async () => {
-                            if (!artistId || !m.image_url) return
+                            if (!artistId || !mCleanSource) return
                             setCatalogImageNotice(null)
                             setCatalogBusy({ kind: 'membership', id: m.id })
                             try {
@@ -1038,7 +1073,7 @@ export function Dashboard() {
                                 },
                                 body: JSON.stringify(
                                   catalogImagePayload(artistId, 'membership', m.id, {
-                                    source_image_url: m.image_url,
+                                    source_image_url: mCleanSource,
                                     creative_prompt: hint || undefined,
                                   })
                                 ),
@@ -1070,7 +1105,8 @@ export function Dashboard() {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           ) : null}
         </section>
@@ -1180,14 +1216,17 @@ export function Dashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {products.map((p) => (
+              {products.map((p) => {
+                const pCardImg = catalogCardImageUrl(p.image_url, catalogPortrait)
+                const pCleanSource = p.image_url?.trim() || catalogPortrait
+                return (
                 <div
                   key={p.id}
                   className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
                 >
                   <div className="relative aspect-[3/4] bg-[var(--signal-silver-light)]/40">
-                    {p.image_url ? (
-                      <img src={p.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                    {pCardImg ? (
+                      <img src={pCardImg} alt="" className="absolute inset-0 h-full w-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center p-4">
                         <span className="text-[var(--signal-ink-muted)] text-sm text-center line-clamp-3" style={{ fontFamily: 'var(--font-body)' }}>
@@ -1279,12 +1318,12 @@ export function Dashboard() {
                       >
                         {catalogBusy?.kind === 'product' && catalogBusy.id === p.id ? '…' : 'Generate'}
                       </button>
-                      {p.image_url && (
+                      {pCleanSource && (
                         <button
                           type="button"
                           disabled={catalogBusy !== null || !artistId}
                           onClick={async () => {
-                            if (!artistId || !p.image_url) return
+                            if (!artistId || !pCleanSource) return
                             setCatalogImageNotice(null)
                             setCatalogBusy({ kind: 'product', id: p.id })
                             try {
@@ -1302,7 +1341,7 @@ export function Dashboard() {
                                 },
                                 body: JSON.stringify(
                                   catalogImagePayload(artistId, 'product', p.id, {
-                                    source_image_url: p.image_url,
+                                    source_image_url: pCleanSource,
                                     creative_prompt: hint || undefined,
                                   })
                                 ),
@@ -1334,7 +1373,8 @@ export function Dashboard() {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </section>

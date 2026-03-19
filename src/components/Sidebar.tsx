@@ -1,13 +1,16 @@
+import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { ArtistQuickCreateModal } from './ArtistQuickCreateModal'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
- * Minimal rail: Home · Studio (dashboard or start) · Settings.
+ * Minimal rail: Home · Studio (dashboard or start) · Quick add (artists) · Settings.
  * Messages & notifications live under Settings to keep the chrome quiet.
  */
 export function Sidebar() {
   const location = useLocation()
   const { profile } = useAuth()
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false)
 
   const studioTo = profile?.role === 'artist' ? '/dashboard' : '/become-artist'
   const studioLabel = profile?.role === 'artist' ? 'Studio' : 'Start'
@@ -30,6 +33,8 @@ export function Sidebar() {
         : 'text-[var(--signal-ink-muted)] hover:bg-[var(--signal-silver-light)]/60 hover:text-[var(--signal-ink)]'
     }`
 
+  const createMenuActive = quickCreateOpen
+
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-full min-h-screen w-14 flex-col items-center border-r border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] py-5">
       <Link to="/" className="mb-8 flex shrink-0 items-center justify-center" aria-label="Signal home">
@@ -43,6 +48,22 @@ export function Sidebar() {
         <Link to={studioTo} className={navClass(studioActive)} aria-label={studioLabel} title={studioLabel}>
           <StudioIcon className="h-5 w-5" strokeWidth={1.5} />
         </Link>
+        {profile?.role === 'artist' ? (
+          <>
+            <button
+              type="button"
+              className={navClass(createMenuActive)}
+              aria-label="Quick add product, event, or membership"
+              title="Quick add"
+              aria-haspopup="dialog"
+              aria-expanded={quickCreateOpen}
+              onClick={() => setQuickCreateOpen(true)}
+            >
+              <PlusIcon className="h-5 w-5" strokeWidth={1.5} />
+            </button>
+            <ArtistQuickCreateModal open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} />
+          </>
+        ) : null}
         <Link to="/settings" className={navClass(settingsActive)} aria-label="Settings" title="Settings">
           <SettingsIcon className="h-5 w-5" strokeWidth={1.5} />
         </Link>
@@ -63,6 +84,14 @@ function StudioIcon({ className, strokeWidth = 2 }: { className?: string; stroke
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={strokeWidth}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M4 5.5h6.5v6.5H4V5.5zm9.5 0H20v6.5h-6.5V5.5zM4 15h6.5v6.5H4V15zm9.5 0H20v6.5h-6.5V15z" />
+    </svg>
+  )
+}
+
+function PlusIcon({ className, strokeWidth = 2 }: { className?: string; strokeWidth?: number }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={strokeWidth}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
     </svg>
   )
 }

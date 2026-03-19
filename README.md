@@ -103,7 +103,7 @@ npm run preview
 - Connect the repo to Vercel.
 - Add env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` for **Production** (and Preview if you use it). Vite inlines `VITE_*` at **build** time — if they were missing on the first deploy, add them and **Redeploy** so the discovery feed and auth hit your real Supabase project (otherwise the app falls back to demo cards only).
 - Build command: `npm run build`; output directory: `dist`.
-- The `api/` folder is deployed as serverless functions at `/api/*`. Add `SUPABASE_SERVICE_ROLE_KEY` for any route that writes to the DB.
+- The `api/` folder is deployed as serverless functions at `/api/*`. Add **`SUPABASE_SERVICE_ROLE_KEY`** (plus `SUPABASE_URL` if not already implied) so `/api/avatar-generate` and other server routes can use the admin client. **Profile photos still save** if this is missing: the browser uploads to Supabase Storage and updates `users` / `artists` directly, but you’ll skip optional server-side avatar history until the service role is set.
 - Shared server code lives in `api/_lib/` (leading underscore so Vercel **does not** count those files toward the Hobby serverless function limit — only top-level `api/*.ts` routes count).
 
 ## API (production)

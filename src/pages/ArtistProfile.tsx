@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
 import { DEMO_ARTIST_PROFILES } from '../data/demoArtists'
+import { catalogCardImageUrl } from '../lib/catalogImage'
 
 type ArtistState = {
   display_name: string
@@ -152,6 +153,10 @@ export function ArtistProfile() {
     )
   }
 
+  const joinTierBanner = joinMembership
+    ? catalogCardImageUrl(joinMembership.image_url, artist.avatar_url)
+    : null
+
   const showToast = (msg: string) => {
     setMockToast(msg)
     setTimeout(() => setMockToast(null), 2500)
@@ -200,9 +205,9 @@ export function ArtistProfile() {
       {joinMembership && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setJoinMembership(null)}>
           <div className="bg-[var(--signal-white-pure)] rounded-2xl overflow-hidden max-w-sm w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
-            {joinMembership.image_url && (
+            {joinTierBanner && (
               <div className="aspect-[16/9] bg-[var(--signal-silver-light)]">
-                <img src={joinMembership.image_url} alt="" className="h-full w-full object-cover" />
+                <img src={joinTierBanner} alt="" className="h-full w-full object-cover" />
               </div>
             )}
             <div className="p-6">
@@ -260,15 +265,21 @@ export function ArtistProfile() {
           </h2>
           {events.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {events.map((e) => (
+              {events.map((e) => {
+                const eventCardImg = catalogCardImageUrl(e.image_url, artist.avatar_url)
+                return (
                 <Link
                   key={e.id}
                   to={e.id.startsWith('demo-') ? `/live/demo-1` : `/live/${e.id}`}
                   className="block rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-white"
                 >
                   <div className="aspect-video bg-[var(--signal-silver-light)]">
-                    {e.image_url && (
-                      <img src={e.image_url} alt="" className="w-full h-full object-cover" />
+                    {eventCardImg ? (
+                      <img src={eventCardImg} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center p-4">
+                        <span className="text-sm font-medium text-[var(--signal-ink)] text-center">{e.title}</span>
+                      </div>
                     )}
                   </div>
                   <div className="p-3">
@@ -278,7 +289,8 @@ export function ArtistProfile() {
                     </p>
                   </div>
                 </Link>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <p className="text-[var(--signal-ink-muted)] text-sm">No upcoming events. Check back later.</p>
@@ -292,7 +304,9 @@ export function ArtistProfile() {
           </h2>
           {memberships.length > 0 ? (
             <div className="flex flex-wrap gap-3">
-              {memberships.map((m) => (
+              {memberships.map((m) => {
+                const tierCardImg = catalogCardImageUrl(m.image_url, artist.avatar_url)
+                return (
                 <button
                   key={m.id}
                   type="button"
@@ -300,8 +314,8 @@ export function ArtistProfile() {
                   className="rounded-[var(--radius-card)] border border-[var(--signal-gold)]/30 bg-[var(--signal-white-pure)] min-w-[160px] max-w-[220px] text-left overflow-hidden hover:border-[var(--signal-gold)]/60 hover:bg-[var(--signal-silver-light)]/30 transition-colors"
                 >
                   <div className="aspect-[4/3] bg-[var(--signal-silver-light)]/50">
-                    {m.image_url ? (
-                      <img src={m.image_url} alt="" className="h-full w-full object-cover" />
+                    {tierCardImg ? (
+                      <img src={tierCardImg} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <div className="h-full w-full flex items-center justify-center px-2">
                         <span className="text-xs text-[var(--signal-ink-muted)] text-center">{m.title}</span>
@@ -314,7 +328,8 @@ export function ArtistProfile() {
                     <span className="text-xs text-[var(--signal-ink-muted)] mt-1 block">Tap to join</span>
                   </div>
                 </button>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <p className="text-[var(--signal-ink-muted)] text-sm">No membership tiers yet.</p>
@@ -328,7 +343,9 @@ export function ArtistProfile() {
           </h2>
           {products.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {products.map((p) => (
+              {products.map((p) => {
+                const productCardImg = catalogCardImageUrl(p.image_url, artist.avatar_url)
+                return (
                 <button
                   key={p.id}
                   type="button"
@@ -336,8 +353,12 @@ export function ArtistProfile() {
                   className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-white text-left hover:border-[var(--signal-gold)]/50 hover:shadow-md transition-all"
                 >
                   <div className="aspect-[3/4] bg-[var(--signal-silver-light)]">
-                    {p.image_url && (
-                      <img src={p.image_url} alt="" className="w-full h-full object-cover" />
+                    {productCardImg ? (
+                      <img src={productCardImg} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center p-3">
+                        <span className="text-xs text-[var(--signal-ink-muted)] text-center line-clamp-4">{p.title}</span>
+                      </div>
                     )}
                   </div>
                   <div className="p-2">
@@ -345,7 +366,8 @@ export function ArtistProfile() {
                     <p className="text-xs text-[var(--signal-ink-muted)] capitalize">{p.type}</p>
                   </div>
                 </button>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <p className="text-[var(--signal-ink-muted)] text-sm">No tracks or merch yet. Follow to get notified when they drop.</p>
