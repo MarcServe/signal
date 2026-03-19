@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-
-const AI_FEATURES_ENABLED = import.meta.env.VITE_ENABLE_AI_FEATURES !== 'false'
+import { AI_FEATURES_ENABLED } from '../lib/features'
+import { fetchArtistBioFromWeb, polishArtistBioDraft } from '../lib/bioResearch'
 
 export function BecomeArtist() {
   const { user, profile, refreshProfile } = useAuth()
@@ -14,6 +14,10 @@ export function BecomeArtist() {
   const [showAiProfile, setShowAiProfile] = useState(false)
   const [aiName, setAiName] = useState('')
   const [aiGenerating, setAiGenerating] = useState(false)
+  const [bio, setBio] = useState('')
+  const [bioResearchLoading, setBioResearchLoading] = useState(false)
+  const [bioPolishLoading, setBioPolishLoading] = useState(false)
+  const [bioNotice, setBioNotice] = useState<string | null>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -41,6 +45,7 @@ export function BecomeArtist() {
       display_name: displayName || profile?.full_name || 'Artist',
       handle: handle || null,
       avatar_url: profile?.avatar_url ?? null,
+      bio: bio.trim() || null,
     })
     setLoading(false)
     if (error) {
@@ -98,14 +103,78 @@ export function BecomeArtist() {
             onChange={(e) => setHandle(e.target.value)}
             className="w-full px-4 py-3 rounded-xl border border-[var(--signal-silver-light)] bg-white text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)]"
           />
+          <div>
+            <label className="block text-xs font-medium text-[var(--signal-ink-muted)] mb-1.5">About (optional)</label>
+            <p className="text-[11px] text-[var(--signal-ink-muted)] mb-1.5 leading-snug">
+              Jot rough notes — <span className="text-[var(--signal-ink)]">Refine</span> cleans it up (Gemini).{' '}
+              <span className="text-[var(--signal-ink)]">Web</span> only if you’re already listed online.
+            </p>
+            {bioNotice && <p className="text-xs text-[var(--signal-ink-muted)] mb-1">{bioNotice}</p>}
+            <textarea
+              value={bio}
+              onChange={(e) => {
+                setBio(e.target.value)
+                setBioNotice(null)
+              }}
+              placeholder="e.g. Detroit techno, monthly residency, self-released EPs…"
+              rows={4}
+              className="w-full px-4 py-3 rounded-xl border border-[var(--signal-silver-light)] bg-white text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)] text-sm"
+            />
+            <div className="mt-2 flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={bioPolishLoading || bioResearchLoading}
+                onClick={async () => {
+                  setBioNotice(null)
+                  setBioPolishLoading(true)
+                  const r = await polishArtistBioDraft(bio, displayName.trim() || profile?.full_name || undefined)
+                  setBioPolishLoading(false)
+                  if (!r.ok) {
+                    setBioNotice(r.error)
+                    return
+                  }
+                  setBio(r.text)
+                  setBioNotice('Refined — edit if you like.')
+                }}
+                className="text-xs text-[var(--signal-ink)] font-medium border-b border-[var(--signal-silver-light)] pb-0.5 hover:border-[var(--signal-gold)] disabled:opacity-40"
+              >
+                {bioPolishLoading ? 'Refining…' : 'Refine'}
+              </button>
+              <button
+                type="button"
+                disabled={bioResearchLoading || bioPolishLoading || (!displayName.trim() && !profile?.full_name?.trim())}
+                onClick={async () => {
+                  setBioNotice(null)
+                  setBioResearchLoading(true)
+                  const q = displayName.trim() || profile?.full_name?.trim() || ''
+                  const r = await fetchArtistBioFromWeb(q)
+                  setBioResearchLoading(false)
+                  if (!r.ok) {
+                    setBioNotice(r.error)
+                    return
+                  }
+                  if (r.summary) {
+                    setBio(r.summary)
+                    setBioNotice(`From ${r.source === 'perplexity' ? 'Perplexity' : 'Wikipedia'} — edit before continuing.`)
+                  } else {
+                    const hint = r.source === 'none' ? r.message : undefined
+                    setBioNotice(hint ?? 'No match. Use Refine or write your own.')
+                  }
+                }}
+                className="text-xs text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] pb-0.5 hover:border-[var(--signal-gold)] hover:text-[var(--signal-ink)] disabled:opacity-40"
+              >
+                {bioResearchLoading ? 'Looking up…' : 'From web'}
+              </button>
+            </div>
+          </div>
           {AI_FEATURES_ENABLED && (
-            <p className="text-xs text-[var(--signal-ink-muted)]">
+            <p className="text-center">
               <button
                 type="button"
                 onClick={() => setShowAiProfile(true)}
-                className="text-[var(--signal-gold)] hover:opacity-80 underline"
+                className="text-xs text-[var(--signal-ink-muted)] tracking-wide uppercase border-b border-[var(--signal-silver-light)] pb-0.5 hover:border-[var(--signal-gold)] hover:text-[var(--signal-ink)] transition-colors"
               >
-                Generate profile from name
+                Suggest name & handle
               </button>
             </p>
           )}
@@ -128,10 +197,10 @@ export function BecomeArtist() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !aiGenerating && setShowAiProfile(false)}>
           <div className="bg-[var(--signal-white-pure)] rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-[var(--signal-ink)] mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-              Generate profile from name
+              Suggest name & handle
             </h3>
-            <p className="text-sm text-[var(--signal-ink-muted)] mb-4">
-              Enter an artist or stage name. We’ll suggest display name and handle. (MVP: local suggestion; full version can pull from the web.)
+            <p className="text-sm text-[var(--signal-ink-muted)] mb-4 leading-relaxed">
+              Enter a stage name. We’ll fill display name and a simple handle you can edit.
             </p>
             <input
               type="text"

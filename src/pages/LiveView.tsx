@@ -7,8 +7,31 @@ import { getDemoStream, DEMO_STREAM_IDS } from '../data/demoStreams'
 import { useSwipeGesture } from '../design-system/gestures'
 import { CheckoutDrawer } from '../components/CheckoutDrawer'
 import type { CheckoutType } from '../components/CheckoutDrawer'
+import { AI_FEATURES_ENABLED } from '../lib/features'
 
 const FREE_VIEW_MINUTES = 20
+
+function IconHeart({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+    </svg>
+  )
+}
+function IconSpark({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" d="M12 3v2m0 14v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M3 12h2m14 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  )
+}
+function IconHands({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v4a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 013 0m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+    </svg>
+  )
+}
 
 export function LiveView() {
   const { streamId } = useParams<{ streamId: string }>()
@@ -27,7 +50,7 @@ export function LiveView() {
   const [shareToast, setShareToast] = useState(false)
   const [avatarMessage, setAvatarMessage] = useState<string | null>(null)
   const [showChat, setShowChat] = useState(false)
-  const [hostPersona, setHostPersona] = useState<'dj' | 'avatar'>('avatar')
+  const [hostPersona, setHostPersona] = useState<'dj' | 'avatar'>(AI_FEATURES_ENABLED ? 'avatar' : 'dj')
   const [showPollsCard, setShowPollsCard] = useState(false)
   const [reactionCounts, setReactionCounts] = useState({ heart: 0, fire: 0, hands: 0 })
   const [isSubscribed, setIsSubscribed] = useState(false)
@@ -181,31 +204,44 @@ export function LiveView() {
         </div>
       </div>
 
-      {/* Floating reactions (right side) */}
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-3 pointer-events-auto">
-        <button type="button" onClick={() => setReactionCounts((c) => ({ ...c, heart: c.heart + 1 }))} className="flex flex-col items-center text-white/90 hover:text-white" aria-label="Like">
-          <span className="text-2xl">❤️</span>
-          {reactionCounts.heart > 0 && <span className="text-xs">{reactionCounts.heart}</span>}
+      {/* Reactions — line icons, no emoji */}
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-4 pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => setReactionCounts((c) => ({ ...c, heart: c.heart + 1 }))}
+          className="flex flex-col items-center gap-0.5 text-white/70 hover:text-white"
+          aria-label="Appreciate"
+        >
+          <IconHeart className="h-6 w-6" />
+          {reactionCounts.heart > 0 && <span className="text-[10px] tabular-nums tracking-widest">{reactionCounts.heart}</span>}
         </button>
-        <button type="button" onClick={() => setReactionCounts((c) => ({ ...c, fire: c.fire + 1 }))} className="flex flex-col items-center text-white/90 hover:text-white" aria-label="Fire">
-          <span className="text-2xl">🔥</span>
-          {reactionCounts.fire > 0 && <span className="text-xs">{reactionCounts.fire}</span>}
+        <button
+          type="button"
+          onClick={() => setReactionCounts((c) => ({ ...c, fire: c.fire + 1 }))}
+          className="flex flex-col items-center gap-0.5 text-white/70 hover:text-white"
+          aria-label="Highlight"
+        >
+          <IconSpark className="h-6 w-6" />
+          {reactionCounts.fire > 0 && <span className="text-[10px] tabular-nums tracking-widest">{reactionCounts.fire}</span>}
         </button>
-        <button type="button" onClick={() => setReactionCounts((c) => ({ ...c, hands: c.hands + 1 }))} className="flex flex-col items-center text-white/90 hover:text-white" aria-label="Applause">
-          <span className="text-2xl">👏</span>
-          {reactionCounts.hands > 0 && <span className="text-xs">{reactionCounts.hands}</span>}
+        <button
+          type="button"
+          onClick={() => setReactionCounts((c) => ({ ...c, hands: c.hands + 1 }))}
+          className="flex flex-col items-center gap-0.5 text-white/70 hover:text-white"
+          aria-label="Clap"
+        >
+          <IconHands className="h-6 w-6" />
+          {reactionCounts.hands > 0 && <span className="text-[10px] tabular-nums tracking-widest">{reactionCounts.hands}</span>}
         </button>
       </div>
 
-      {/* Chat pill */}
       <button
         type="button"
         onClick={() => setShowChat((s) => !s)}
-        className="absolute right-3 bottom-24 z-20 flex items-center gap-2 rounded-full bg-black/50 px-3 py-2 text-white/90 hover:bg-black/70 pointer-events-auto"
+        className="absolute right-3 bottom-24 z-20 rounded-full border border-white/25 bg-black/40 px-4 py-2 text-xs font-medium tracking-[0.2em] uppercase text-white/90 hover:bg-black/55 pointer-events-auto"
         aria-label="Chat"
       >
-        <span className="text-lg">💬</span>
-        <span className="text-sm">Chat</span>
+        Chat
       </button>
       {showChat && (
         <div className="absolute right-3 bottom-36 z-30 w-72 max-h-48 rounded-xl bg-black/80 text-white text-sm overflow-hidden flex flex-col pointer-events-auto">
@@ -252,11 +288,11 @@ export function LiveView() {
               <button type="button" onClick={() => setShowOverlaySheet(false)} className="text-[var(--signal-ink-muted)]">✕</button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setShowTipDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm">💝 Tip</button>
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setShowShareSheet(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm">🔗 Share</button>
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Track', type: 'track' }); setShowPurchaseDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm">🎵 Buy track</button>
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Ticket', type: 'ticket' }); setShowPurchaseDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm">🎟 Get ticket</button>
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Membership', type: 'membership' }); setShowPurchaseDrawer(true); }} className="col-span-2 py-3 rounded-xl bg-[var(--signal-gold)]/15 border border-[var(--signal-gold)]/40 text-[var(--signal-gold)] text-sm font-medium">💎 Join membership</button>
+              <button type="button" onClick={() => { setShowOverlaySheet(false); setShowTipDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Tip</button>
+              <button type="button" onClick={() => { setShowOverlaySheet(false); setShowShareSheet(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Share</button>
+              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Track', type: 'track' }); setShowPurchaseDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Track</button>
+              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Ticket', type: 'ticket' }); setShowPurchaseDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Ticket</button>
+              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Membership', type: 'membership' }); setShowPurchaseDrawer(true); }} className="col-span-2 py-3 rounded-xl border border-[var(--signal-ink)] bg-[var(--signal-ink)] text-white text-sm font-medium tracking-wide">Membership</button>
             </div>
           </div>
         </div>
@@ -272,8 +308,8 @@ export function LiveView() {
             </div>
             <div className="space-y-2">
               <button type="button" onClick={async () => { await navigator.clipboard.writeText(window.location.href); setShareToast(true); setTimeout(() => setShareToast(false), 2000); setShowShareSheet(false); }} className="w-full py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm">Copy link</button>
-              <button type="button" onClick={async () => { const text = `${stream?.title ?? 'Live'} — watch live on Signal 🔗 ${window.location.href}`; await navigator.clipboard.writeText(text); setShareToast(true); setTimeout(() => setShareToast(false), 2000); setShowShareSheet(false); }} className="w-full py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm">Copy for Instagram</button>
-              <button type="button" onClick={async () => { const text = `Watch live on Signal 👀 ${window.location.href}`; await navigator.clipboard.writeText(text); setShareToast(true); setTimeout(() => setShareToast(false), 2000); setShowShareSheet(false); }} className="w-full py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm">Copy for TikTok</button>
+              <button type="button" onClick={async () => { const text = `${stream?.title ?? 'Live'} — ${window.location.href}`; await navigator.clipboard.writeText(text); setShareToast(true); setTimeout(() => setShareToast(false), 2000); setShowShareSheet(false); }} className="w-full py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Copy caption + link</button>
+              <button type="button" onClick={async () => { const text = `${window.location.href}`; await navigator.clipboard.writeText(text); setShareToast(true); setTimeout(() => setShareToast(false), 2000); setShowShareSheet(false); }} className="w-full py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Copy link only</button>
             </div>
           </div>
         </div>
@@ -285,26 +321,26 @@ export function LiveView() {
         </div>
       )}
 
-      {/* Host persona toggle (cosmetic) */}
-      <div className="absolute left-3 bottom-24 z-20 flex items-center gap-2 pointer-events-auto">
-        <span className="text-white/70 text-xs">Host:</span>
-        <button
-          type="button"
-          onClick={() => setHostPersona((p) => (p === 'dj' ? 'avatar' : 'dj'))}
-          className="px-2 py-1 rounded bg-black/40 text-white text-xs hover:bg-black/60"
-        >
-          {hostPersona === 'dj' ? 'DJ' : 'Avatar'}
-        </button>
-      </div>
+      {AI_FEATURES_ENABLED && (
+        <div className="absolute left-3 bottom-24 z-20 flex items-center gap-2 pointer-events-auto">
+          <span className="text-white/50 text-[10px] uppercase tracking-[0.2em]">Host</span>
+          <button
+            type="button"
+            onClick={() => setHostPersona((p) => (p === 'dj' ? 'avatar' : 'dj'))}
+            className="px-2 py-1 rounded border border-white/20 bg-black/40 text-white text-[10px] uppercase tracking-widest hover:bg-black/60"
+          >
+            {hostPersona === 'dj' ? 'Live' : 'Portrait'}
+          </button>
+        </div>
+      )}
 
-      {/* Avatar message overlay (AI avatar appears during interactions) */}
       {avatarMessage && (
         <div className="absolute bottom-24 left-4 right-4 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-black/70 text-white text-sm max-w-xs">
-            {hostPersona === 'avatar' && avatarUrl && (
-              <img src={avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+          <div className="flex items-center gap-3 px-5 py-2.5 rounded-sm bg-black/75 text-white text-sm max-w-sm tracking-wide border border-white/10">
+            {AI_FEATURES_ENABLED && hostPersona === 'avatar' && avatarUrl && (
+              <img src={avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover flex-shrink-0 ring-1 ring-white/20" />
             )}
-            <span>{hostPersona === 'dj' ? `DJ: ${avatarMessage}` : avatarMessage}</span>
+            <span className="text-white/95">{avatarMessage}</span>
           </div>
         </div>
       )}

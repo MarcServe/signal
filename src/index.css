@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Signal design tokens – luxury (white, gold, silver), minimal, image-first */
+/* Signal — minimal, luxury, image-first. Optional AI UI only when VITE_ENABLE_AI_FEATURES=true */
 :root {
   /* Palette */
   --signal-white: #fafafa;

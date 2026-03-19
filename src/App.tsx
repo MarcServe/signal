@@ -16,12 +16,14 @@ import { AvatarCreate } from './pages/AvatarCreate'
 import { Notifications } from './pages/Notifications'
 import { Messages } from './pages/Messages'
 import { Settings } from './pages/Settings'
+import { SettingsAccount } from './pages/SettingsAccount'
+import { SettingsPrivacy } from './pages/SettingsPrivacy'
 
 function MainLayout() {
   return (
     <>
       <Sidebar />
-      <div className="min-h-screen flex flex-col pl-16">
+      <div className="min-h-screen flex flex-col pl-14">
         <TopBar />
         <main className="flex-1">
           <Outlet />
@@ -63,6 +65,8 @@ function App() {
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/account" element={<SettingsAccount />} />
+            <Route path="/settings/privacy" element={<SettingsPrivacy />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

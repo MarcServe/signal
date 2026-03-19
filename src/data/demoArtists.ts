@@ -38,17 +38,17 @@ const nextMonth = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
 
 export const DEMO_ARTIST_PROFILES: Record<string, DemoArtistProfile> = {
   'demo-artist-1': {
-    display_name: 'NOVA',
-    handle: 'novabeats',
+    display_name: 'DJ KRUST',
+    handle: 'djkrust',
     avatar_url: card(1),
     bio: 'Electronic producer and DJ. Blending ambient textures with driving beats. Based in London.',
     events: [
-      { id: 'demo-e1-a', title: 'NOVA · Night Drive', image_url: card(1), starts_at: nextWeek },
-      { id: 'demo-e1-b', title: 'NOVA · Studio Session', image_url: card(1), starts_at: nextMonth },
+      { id: 'demo-e1-a', title: 'DJ KRUST · Night Drive', image_url: card(1), starts_at: nextWeek },
+      { id: 'demo-e1-b', title: 'DJ KRUST · Studio Session', image_url: card(1), starts_at: nextMonth },
     ],
     products: [
       { id: 'demo-p1-a', title: 'Midnight EP', image_url: card(1), type: 'track' },
-      { id: 'demo-p1-b', title: 'NOVA Logo Cap', image_url: card(1), type: 'merch' },
+      { id: 'demo-p1-b', title: 'DJ KRUST Logo Cap', image_url: card(1), type: 'merch' },
     ],
     memberships: [
       { id: 'demo-m1-a', title: 'Inner Circle', price_cents: 999 },

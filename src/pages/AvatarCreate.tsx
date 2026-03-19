@@ -3,9 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { apiUrl, getSession } from '../lib/api'
-
-const AI_FEATURES_ENABLED = import.meta.env.VITE_ENABLE_AI_FEATURES !== 'false'
-
 export function AvatarCreate() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   const navigate = useNavigate()
@@ -14,7 +11,6 @@ export function AvatarCreate() {
   const [latestUploadUrl, setLatestUploadUrl] = useState<string | null>(null)
   const [artistId, setArtistId] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
-  const [showAiImage, setShowAiImage] = useState(false)
   /** Local blob URL while a new file is uploading (revoked after upload ends). */
   const [pickerPreview, setPickerPreview] = useState<string | null>(null)
 
@@ -150,12 +146,15 @@ export function AvatarCreate() {
         return
       }
 
+      // Home feed uses artists.avatar_url in feed_items_view — keep it in sync with users.avatar_url
+      await supabase.from('artists').update({ avatar_url: savedImageUrl }).eq('user_id', user.id)
+
       await refreshProfile()
       setMessage({
         type: 'success',
         text: serverAvatarSynced
-          ? 'Avatar uploaded. You can enhance it below or go to your dashboard when you’re ready.'
-          : 'Avatar uploaded. (Local dev: run `vercel dev` to hit `/api/avatar-generate` and sync the `avatars` table.)',
+          ? 'Saved.'
+          : 'Saved. If refine is unavailable locally, run the API server alongside Vite.',
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unexpected upload error.'
@@ -201,36 +200,72 @@ export function AvatarCreate() {
         setMessage({ type: 'error', text: 'Session expired. Sign in again and retry.' })
         return
       }
-      const apiRes = await fetch(apiUrl('/avatar-generate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          artist_id: resolvedArtistId,
-          image_url: imageUrlForEnhance,
-          mode: 'enhance',
-          provider: 'gemini',
-        }),
-      })
-      const apiJson = await apiRes.json().catch(() => ({} as { error?: string; image_url?: string }))
+      let apiRes: Response
+      try {
+        apiRes = await fetch(apiUrl('/avatar-generate'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            artist_id: resolvedArtistId,
+            image_url: imageUrlForEnhance,
+            mode: 'enhance',
+            provider: 'gemini',
+          }),
+        })
+      } catch {
+        setMessage({
+          type: 'error',
+          text: 'Can’t reach the API. Vite proxies /api to port 3000 — open a second terminal and run npm run dev:vercel, leave npm run dev on :5173, then try again.',
+        })
+        return
+      }
+      const raw = await apiRes.text()
+      let apiJson = {} as { error?: string; image_url?: string; warning?: string }
+      try {
+        if (raw.trim()) apiJson = JSON.parse(raw) as typeof apiJson
+      } catch {
+        /* non-JSON error body */
+      }
       if (!apiRes.ok) {
+        if (apiRes.status === 502 || apiRes.status === 504) {
+          setMessage({
+            type: 'error',
+            text: 'API not reachable on port 3000 (Vite proxy failed). Run npm run dev:vercel in another terminal, keep npm run dev on :5173, then try again.',
+          })
+          return
+        }
         const detail =
           apiRes.status === 404
             ? ' The /api route is missing. In a second terminal run: npm run dev:vercel (Vercel serves /api on :3000). Keep npm run dev on :5173 — Vite proxies /api there.'
             : ''
+        const serverMsg = apiJson.error || (raw.trim() ? raw.slice(0, 280) : '') || `HTTP ${apiRes.status}`
         setMessage({
           type: 'error',
-          text: `Enhance failed: ${apiJson.error ?? `HTTP ${apiRes.status}`}.${detail}`,
+          text: `Enhance failed: ${serverMsg}.${detail}`,
         })
         return
       }
-      const finalImageUrl = (apiJson.image_url as string | undefined) ?? imageUrlForEnhance
+      const finalImageUrl = apiJson.image_url ?? imageUrlForEnhance
       setLatestUploadUrl(finalImageUrl)
       await supabase.from('users').update({ avatar_url: finalImageUrl, avatar_setup_done: true }).eq('id', user.id)
+      await supabase.from('artists').update({ avatar_url: finalImageUrl }).eq('user_id', user.id)
       await refreshProfile()
-      setMessage({ type: 'success', text: 'Enhancement completed and saved.' })
+      setMessage({
+        type: 'success',
+        text: apiJson.warning ? `Refinement saved. (${apiJson.warning})` : 'Refinement saved.',
+      })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Enhance request failed.'
-      setMessage({ type: 'error', text: msg })
+      const failedFetch =
+        err instanceof TypeError ||
+        (err instanceof Error && /network|fetch|failed|refused|load/i.test(err.message))
+      setMessage({
+        type: 'error',
+        text: failedFetch
+          ? 'Can’t reach the API. Run npm run dev:vercel (port 3000) alongside npm run dev (5173).'
+          : err instanceof Error
+            ? err.message
+            : 'Enhance request failed.',
+      })
     } finally {
       setEnhancing(false)
     }
@@ -240,23 +275,23 @@ export function AvatarCreate() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)] px-4">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <h1 className="text-2xl font-semibold text-[var(--signal-ink)] mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-          Create AI avatar
+          Portrait
         </h1>
-        <p className="text-sm text-[var(--signal-ink-muted)] mb-6">
-          Upload an image. Your avatar will thank supporters and promote products during streams. (MVP: image stored; full AI generation uses OpenAI + ElevenLabs.)
+        <p className="text-sm text-[var(--signal-ink-muted)] mb-6 leading-relaxed">
+          One image for your public profile and discovery cards. Shown in a tall portrait frame (not a square crop on the feed).
         </p>
         {previewSrc && (
-          <div className="mb-6 flex flex-col items-center gap-2">
+          <div className="mb-6 flex flex-col gap-2">
             <p className="text-xs font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-              {pickerPreview ? 'Preview' : 'Your avatar'}
+              {pickerPreview ? 'Preview' : 'Your portrait'}
             </p>
-            <div className="relative h-44 w-44 overflow-hidden rounded-2xl border border-[var(--signal-silver-light)] bg-[var(--signal-silver-light)]/15 shadow-sm ring-1 ring-black/5">
+            <div className="relative w-full max-w-xs mx-auto sm:mx-0 aspect-[3/4] overflow-hidden rounded-2xl border border-[var(--signal-silver-light)] bg-[var(--signal-silver-light)]/15 shadow-sm ring-1 ring-black/5">
               <img
                 src={previewSrc}
-                alt={pickerPreview ? 'Selected image preview' : 'Your avatar'}
-                className="h-full w-full object-cover"
+                alt={pickerPreview ? 'Selected image preview' : 'Your portrait'}
+                className="absolute inset-0 h-full w-full object-cover"
               />
             </div>
           </div>
@@ -265,17 +300,31 @@ export function AvatarCreate() {
           <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
           {uploading ? 'Uploading…' : 'Choose image'}
         </label>
-        {AI_FEATURES_ENABLED && (
-          <p className="mt-2 text-xs text-[var(--signal-ink-muted)]">
+
+        {/* Collapsed by default — expand for Gemini refinement */}
+        <details className="group/refine mt-6 rounded-2xl border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] overflow-hidden">
+          <summary className="cursor-pointer select-none list-none px-4 py-3.5 flex items-center justify-between gap-3 text-sm font-semibold text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden" style={{ fontFamily: 'var(--font-display)' }}>
+            <span>Portrait refinement</span>
+            <span className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-normal text-[var(--signal-ink-muted)] group-open/refine:hidden">Expand</span>
+              <span className="text-[11px] font-normal text-[var(--signal-ink-muted)] hidden group-open/refine:inline">Collapse</span>
+            </span>
+          </summary>
+          <div className="px-4 pb-4 pt-0 border-t border-[var(--signal-silver-light)]/70">
+            <p className="pt-3 text-xs text-[var(--signal-ink-muted)] leading-relaxed">
+              Studio-style pass (Gemini). Needs <code className="text-[10px]">dev:vercel</code> on :3000 and{' '}
+              <code className="text-[10px]">GEMINI_API_KEY</code>.
+            </p>
             <button
               type="button"
-              onClick={() => setShowAiImage(true)}
-              className="text-[var(--signal-gold)] hover:opacity-80 underline"
+              onClick={handleEnhanceLatest}
+              disabled={uploading || enhancing}
+              className="mt-4 w-full sm:w-auto min-w-[12rem] py-3 px-4 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium tracking-wide disabled:opacity-50 hover:opacity-90"
             >
-              AI: Enhance or generate image
+              {enhancing ? 'Working…' : 'Run refinement'}
             </button>
-          </p>
-        )}
+          </div>
+        </details>
         {message && (
           <p className={`mt-4 text-sm ${message.type === 'error' ? 'text-red-600' : 'text-[var(--signal-gold)]'}`}>
             {message.text}
@@ -291,38 +340,6 @@ export function AvatarCreate() {
         )}
 
       </div>
-
-      {AI_FEATURES_ENABLED && showAiImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowAiImage(false)}>
-          <div className="bg-[var(--signal-white-pure)] rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-[var(--signal-ink)] mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-              AI image
-            </h3>
-            <p className="text-sm text-[var(--signal-ink-muted)] mb-4">
-              Enhance an existing photo or generate an avatar from a description. Connect OpenAI or an image API to enable. (Hidden until needed.)
-            </p>
-            <ul className="text-sm text-[var(--signal-ink-muted)] list-disc list-inside space-y-1 mb-4">
-              <li>Enhance image — improve quality of your upload</li>
-              <li>Generate from description — create an avatar from text</li>
-            </ul>
-            <button
-              type="button"
-              onClick={handleEnhanceLatest}
-              disabled={uploading || enhancing}
-              className="w-full mb-2 py-2 rounded-xl bg-[var(--signal-gold)] text-white text-sm font-medium disabled:opacity-50"
-            >
-              {enhancing ? 'Enhancing…' : 'Enhance current avatar'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAiImage(false)}
-              className="w-full py-2 rounded-xl border border-[var(--signal-silver-light)] text-sm text-[var(--signal-ink-muted)]"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -62,12 +62,12 @@ function getInlineImageFromResponse(data: unknown): GeminiEnhanceResult | null {
 
   for (const part of parts) {
     const inline =
-      (part.inlineData as { mimeType?: string; mime_type?: string; data?: string } | undefined) ??
+      (part.inlineData as { mimeType?: string; data?: string } | undefined) ??
       (part.inline_data as { mime_type?: string; mimeType?: string; data?: string } | undefined)
     if (inline?.data && typeof inline.data === 'string') {
       const mime =
-        inline.mimeType ??
-        inline.mime_type ??
+        (inline as { mimeType?: string; mime_type?: string }).mimeType ??
+        (inline as { mime_type?: string }).mime_type ??
         'image/png'
       return { imageBase64: inline.data, mimeType: mime }
     }
@@ -103,6 +103,7 @@ export async function enhancePortraitWithGemini(params: {
     imageConfig.imageSize = process.env.GEMINI_IMAGE_SIZE || '1K'
   }
 
+  // REST JSON uses camelCase field names (inlineData, mimeType) per Google Generative Language API.
   const body = {
     contents: [
       {
@@ -110,8 +111,8 @@ export async function enhancePortraitWithGemini(params: {
         parts: [
           { text: prompt },
           {
-            inline_data: {
-              mime_type: mimeType,
+            inlineData: {
+              mimeType,
               data: base64,
             },
           },

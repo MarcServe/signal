@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { apiUrl, getSession } from '../lib/api'
+import { fetchArtistBioFromWeb, polishArtistBioDraft } from '../lib/bioResearch'
 
 const MUSIC_INTEGRATION_CARDS = [
   {
@@ -29,10 +30,26 @@ export function Dashboard() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const profileRetried = useRef(false)
-  const [artist, setArtist] = useState<{ id: string; display_name: string; stripe_account_id?: string | null; stripe_onboarding_complete?: boolean } | null>(null)
+  const [artist, setArtist] = useState<{
+    id: string
+    display_name: string
+    bio: string | null
+    profile_visible?: boolean
+    stripe_account_id?: string | null
+    stripe_onboarding_complete?: boolean
+  } | null>(null)
+  const [bioDraft, setBioDraft] = useState('')
+  const [bioSaving, setBioSaving] = useState(false)
+  const [bioResearchLoading, setBioResearchLoading] = useState(false)
+  const [bioPolishLoading, setBioPolishLoading] = useState(false)
+  const [bioNotice, setBioNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [artistLoaded, setArtistLoaded] = useState(false)
   const [streams, setStreams] = useState<{ id: string; title: string | null; is_live: boolean; camera_auto_rotate?: boolean }[]>([])
-  const [products, setProducts] = useState<{ id: string; title: string }[]>([])
+  const [products, setProducts] = useState<{ id: string; title: string; image_url: string | null }[]>([])
+  const [generatingProductId, setGeneratingProductId] = useState<string | null>(null)
+  const [productImageNotice, setProductImageNotice] = useState<string | null>(null)
+  const productFileRef = useRef<HTMLInputElement>(null)
+  const pendingProductUploadId = useRef<string | null>(null)
   const [events, setEvents] = useState<{ id: string; title: string; starts_at: string; venue: string | null }[]>([])
   const [memberships, setMemberships] = useState<{ id: string; title: string; price_cents: number }[]>([])
   const [feeFreeToday, setFeeFreeToday] = useState(false)
@@ -41,6 +58,27 @@ export function Dashboard() {
   const [addProductOpen, setAddProductOpen] = useState(false)
   const [newProductTitle, setNewProductTitle] = useState('')
   const [newProductPrice, setNewProductPrice] = useState('9.99')
+  const [addEventOpen, setAddEventOpen] = useState(false)
+  const [newEventTitle, setNewEventTitle] = useState('')
+  const [newEventVenue, setNewEventVenue] = useState('')
+  const [newEventStartsAt, setNewEventStartsAt] = useState('')
+  const [addTierOpen, setAddTierOpen] = useState(false)
+  const [newTierTitle, setNewTierTitle] = useState('')
+  const [newTierPrice, setNewTierPrice] = useState('9.99')
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const reloadEvents = async (id: string) => {
+    const { data } = await supabase.from('events').select('id, title, starts_at, venue').eq('artist_id', id).order('starts_at', { ascending: true }).limit(20)
+    setEvents((data ?? []) as typeof events)
+  }
+  const reloadMemberships = async (id: string) => {
+    const { data } = await supabase.from('memberships').select('id, title, price_cents').eq('artist_id', id)
+    setMemberships((data ?? []) as typeof memberships)
+  }
+  const reloadProducts = async (id: string) => {
+    const { data } = await supabase.from('products').select('id, title, image_url').eq('artist_id', id).limit(40)
+    setProducts((data ?? []) as typeof products)
+  }
 
   const handleStripeConnect = async () => {
     if (!artist?.id) return
@@ -77,15 +115,29 @@ export function Dashboard() {
     setArtistLoaded(false)
     supabase
       .from('artists')
-      .select('id, display_name, stripe_account_id, stripe_onboarding_complete')
+      .select('id, display_name, bio, stripe_account_id, stripe_onboarding_complete')
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }) => {
-        setArtist(data ?? null)
+      .then(async ({ data, error }) => {
         setArtistLoaded(true)
-        if (data?.id) {
+        if (error || !data) {
+          setArtist(null)
+          return
+        }
+        let profile_visible: boolean | undefined = true
+        const { data: visRow, error: visErr } = await supabase
+          .from('artists')
+          .select('profile_visible')
+          .eq('id', data.id)
+          .maybeSingle()
+        if (!visErr && visRow && typeof (visRow as { profile_visible?: boolean }).profile_visible === 'boolean') {
+          profile_visible = (visRow as { profile_visible: boolean }).profile_visible
+        }
+        const merged = { ...data, profile_visible }
+        setArtist(merged as typeof artist)
+        if (data.id) {
           supabase.from('streams').select('id, title, is_live, camera_auto_rotate').eq('artist_id', data.id).order('created_at', { ascending: false }).limit(10).then(({ data: s }) => setStreams((s ?? []) as typeof streams))
-          supabase.from('products').select('id, title').eq('artist_id', data.id).limit(20).then(({ data: p }) => setProducts((p ?? []) as typeof products))
+          supabase.from('products').select('id, title, image_url').eq('artist_id', data.id).limit(40).then(({ data: p }) => setProducts((p ?? []) as typeof products))
           supabase.from('events').select('id, title, starts_at, venue').eq('artist_id', data.id).order('starts_at', { ascending: true }).limit(20).then(({ data: e }) => setEvents((e ?? []) as typeof events))
           supabase.from('memberships').select('id, title, price_cents').eq('artist_id', data.id).then(({ data: m }) => setMemberships((m ?? []) as typeof memberships))
         }
@@ -103,6 +155,11 @@ export function Dashboard() {
         setFeeFreeToday(new Date(settings.fee_free_until) > new Date())
       })
   }, [user, profile?.role, profile?.avatar_setup_done, navigate])
+
+  useEffect(() => {
+    if (!artist) return
+    setBioDraft(artist.bio ?? '')
+  }, [artist?.id, artist?.bio])
 
   if (authLoading || !user) {
     return (
@@ -147,22 +204,156 @@ export function Dashboard() {
   return (
     <div className="min-h-screen bg-[var(--signal-white)]">
       <div className="max-w-3xl mx-auto px-[var(--gutter)] py-[var(--space-3xl)]">
-        {/* Hero: name + minimal CTA */}
+        {/* Hero: portrait (set on /avatar/create) + name */}
         <header className="mb-[var(--space-2xl)]">
-          <h1 className="text-3xl font-semibold text-[var(--signal-ink)] tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
-            {displayName}
-          </h1>
-          <p className="mt-2 text-[var(--signal-ink-muted)] text-sm">
-            <Link to="/avatar/create" className="text-[var(--signal-gold)] hover:opacity-80 transition-opacity">Add AI avatar</Link>
-            <span className="mx-2">·</span>
-            <span>Your streams and products</span>
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-end gap-6">
+            <Link
+              to="/avatar/create"
+              className="relative shrink-0 block rounded-2xl overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-silver-light)]/30 w-[7.25rem] sm:w-[8.5rem] aspect-[3/4] hover:ring-2 hover:ring-[var(--signal-gold)]/30 transition-shadow"
+              title="Add or change portrait"
+              aria-label="Portrait — add or change your photo"
+            >
+              {profile.avatar_url ? (
+                <img src={profile.avatar_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-[var(--signal-ink-muted)] text-xs text-center px-2 leading-snug">
+                  Add portrait
+                </div>
+              )}
+            </Link>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-3xl font-semibold text-[var(--signal-ink)] tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
+                {displayName}
+              </h1>
+              <p className="mt-2 text-[var(--signal-ink-muted)] text-sm leading-relaxed">
+                <Link
+                  to="/avatar/create"
+                  className="text-sm text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] hover:border-[var(--signal-gold)] hover:text-[var(--signal-ink)] transition-colors"
+                >
+                  Portrait
+                </Link>
+                <span className="mx-2">·</span>
+                <span>Same image on discovery cards — refine it on the Portrait page</span>
+              </p>
+            </div>
+          </div>
           {!artist && (
-            <p className="mt-3 text-sm">
+            <p className="mt-4 text-sm">
               <Link to="/become-artist" className="text-[var(--signal-gold)] hover:opacity-80">Complete your artist profile</Link> to go live and add products.
             </p>
           )}
         </header>
+
+        {artist && artist.profile_visible === false && (
+          <div className="mb-[var(--space-xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-silver-light)]/25 px-4 py-3 text-sm text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-body)' }}>
+            <span className="font-medium">You’re offline</span>
+            <span className="text-[var(--signal-ink-muted)]"> — your public profile and catalogue are hidden from discovery. </span>
+            <Link to="/settings/privacy" className="text-[var(--signal-gold)] hover:opacity-80 whitespace-nowrap">
+              Go online
+            </Link>
+          </div>
+        )}
+
+        {artistId && (
+          <section className="mb-[var(--space-2xl)]">
+            <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+              About
+            </h2>
+            <p className="text-xs text-[var(--signal-ink-muted)] mb-3">
+              Public profile only. <span className="text-[var(--signal-ink)]">Refine</span> polishes your notes (Gemini, no web).{' '}
+              <span className="text-[var(--signal-ink)]">Web</span> uses Wikipedia or Perplexity if configured.
+            </p>
+            {bioNotice && (
+              <p className={`mb-2 text-sm ${bioNotice.type === 'err' ? 'text-red-600' : 'text-[var(--signal-ink-muted)]'}`} role="status">
+                {bioNotice.text}
+              </p>
+            )}
+            <textarea
+              value={bioDraft}
+              onChange={(e) => {
+                setBioDraft(e.target.value)
+                setBioNotice(null)
+              }}
+              placeholder="Rough notes are fine — genres, city, what you play, where you perform…"
+              rows={4}
+              className="w-full rounded-xl border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-3 py-2.5 text-sm text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)]/40 mb-3"
+            />
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                type="button"
+                disabled={bioPolishLoading || bioResearchLoading}
+                title="Polish your notes with Gemini — no Wikipedia required"
+                onClick={async () => {
+                  setBioNotice(null)
+                  setBioPolishLoading(true)
+                  const r = await polishArtistBioDraft(bioDraft, displayName)
+                  setBioPolishLoading(false)
+                  if (!r.ok) {
+                    setBioNotice({ type: 'err', text: r.error })
+                    return
+                  }
+                  setBioDraft(r.text)
+                  setBioNotice({ type: 'ok', text: 'Refined. Edit if you like, then save.' })
+                }}
+                className="px-3 py-2 rounded-xl border border-[var(--signal-silver-light)] text-sm text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/30 disabled:opacity-50"
+              >
+                {bioPolishLoading ? 'Refining…' : 'Refine'}
+              </button>
+              <button
+                type="button"
+                disabled={bioResearchLoading || bioPolishLoading}
+                onClick={async () => {
+                  setBioNotice(null)
+                  const q = displayName.trim()
+                  if (!q) {
+                    setBioNotice({ type: 'err', text: 'Set a display name on your artist profile first.' })
+                    return
+                  }
+                  setBioResearchLoading(true)
+                  const r = await fetchArtistBioFromWeb(q)
+                  setBioResearchLoading(false)
+                  if (!r.ok) {
+                    setBioNotice({ type: 'err', text: r.error })
+                    return
+                  }
+                  if (r.summary) {
+                    setBioDraft(r.summary)
+                    setBioNotice({
+                      type: 'ok',
+                      text: `From ${r.source === 'perplexity' ? 'web (Perplexity)' : 'Wikipedia'}. Edit, then save.`,
+                    })
+                  } else {
+                    const hint = r.source === 'none' ? r.message : undefined
+                    setBioNotice({ type: 'err', text: hint ?? 'Nothing found for that name.' })
+                  }
+                }}
+                className="px-3 py-2 rounded-xl border border-[var(--signal-silver-light)] text-sm text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/30 disabled:opacity-50"
+              >
+                {bioResearchLoading ? 'Looking up…' : 'From web'}
+              </button>
+              <button
+                type="button"
+                disabled={bioSaving}
+                onClick={async () => {
+                  if (!artistId) return
+                  setBioSaving(true)
+                  setBioNotice(null)
+                  const { error } = await supabase.from('artists').update({ bio: bioDraft.trim() || null }).eq('id', artistId)
+                  setBioSaving(false)
+                  if (error) {
+                    setBioNotice({ type: 'err', text: error.message })
+                    return
+                  }
+                  setArtist((prev) => (prev ? { ...prev, bio: bioDraft.trim() || null } : null))
+                  setBioNotice({ type: 'ok', text: 'Saved to your public profile.' })
+                }}
+                className="px-3 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {bioSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </section>
+        )}
 
         {feeFreeToday && (
           <div className="mb-[var(--space-xl)] rounded-[var(--radius-card)] bg-[var(--signal-gold)]/10 border border-[var(--signal-gold)]/30 px-4 py-3 text-sm text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-body)' }}>
@@ -290,11 +481,96 @@ export function Dashboard() {
         {/* Events */}
         <section className="mb-[var(--space-2xl)]">
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Events</h2>
-          {events.length === 0 ? (
-            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm">
-              No events yet. Add live experiences and ticket links.
+          {formError && (addEventOpen || addTierOpen) && (
+            <p className="mb-2 text-sm text-red-600" role="alert">
+              {formError}
+            </p>
+          )}
+          {addEventOpen && artistId && (
+            <div className="mb-4 p-4 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] space-y-2">
+              <input
+                type="text"
+                placeholder="Event title"
+                value={newEventTitle}
+                onChange={(e) => setNewEventTitle(e.target.value)}
+                className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                placeholder="Venue (optional)"
+                value={newEventVenue}
+                onChange={(e) => setNewEventVenue(e.target.value)}
+                className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm"
+              />
+              <label className="block text-xs text-[var(--signal-ink-muted)]">
+                Date & time
+                <input
+                  type="datetime-local"
+                  value={newEventStartsAt}
+                  onChange={(e) => setNewEventStartsAt(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm"
+                />
+              </label>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!artistId) return
+                    setFormError(null)
+                    if (!newEventStartsAt.trim()) {
+                      setFormError('Choose a date and time for the event.')
+                      return
+                    }
+                    const { error } = await supabase.from('events').insert({
+                      artist_id: artistId,
+                      title: newEventTitle.trim() || 'Untitled event',
+                      starts_at: new Date(newEventStartsAt).toISOString(),
+                      venue: newEventVenue.trim() || null,
+                    })
+                    if (error) {
+                      setFormError(error.message)
+                      return
+                    }
+                    await reloadEvents(artistId)
+                    setNewEventTitle('')
+                    setNewEventVenue('')
+                    setNewEventStartsAt('')
+                    setAddEventOpen(false)
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white text-sm hover:opacity-90"
+                >
+                  Save event
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddEventOpen(false)
+                    setFormError(null)
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          ) : (
+          )}
+          {!addEventOpen && artistId && (
+            <button
+              type="button"
+              onClick={() => {
+                setFormError(null)
+                setAddEventOpen(true)
+              }}
+              className="mb-4 text-sm text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] hover:border-[var(--signal-ink)] transition-colors"
+            >
+              + Add event
+            </button>
+          )}
+          {events.length === 0 && !addEventOpen ? (
+            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm">
+              No events yet. Use <span className="text-[var(--signal-ink)]">+ Add event</span> above.
+            </div>
+          ) : events.length > 0 ? (
             <ul className="space-y-3">
               {events.map((ev) => (
                 <li key={ev.id} className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-4 flex justify-between items-center">
@@ -308,17 +584,87 @@ export function Dashboard() {
                 </li>
               ))}
             </ul>
-          )}
+          ) : null}
         </section>
 
         {/* Subscription tiers (memberships) */}
         <section className="mb-[var(--space-2xl)]">
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Subscription tiers</h2>
-          {memberships.length === 0 ? (
-            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm">
-              No tiers yet. Create membership tiers so fans can subscribe.
+          {addTierOpen && artistId && (
+            <div className="mb-4 p-4 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] space-y-2">
+              <input
+                type="text"
+                placeholder="Tier name (e.g. Inner Circle)"
+                value={newTierTitle}
+                onChange={(e) => setNewTierTitle(e.target.value)}
+                className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                placeholder="Monthly price (e.g. 9.99)"
+                value={newTierPrice}
+                onChange={(e) => setNewTierPrice(e.target.value)}
+                className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm"
+              />
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!artistId) return
+                    setFormError(null)
+                    const cents = Math.round(parseFloat(newTierPrice) * 100)
+                    if (Number.isNaN(cents) || cents < 0) {
+                      setFormError('Enter a valid price.')
+                      return
+                    }
+                    const { error } = await supabase.from('memberships').insert({
+                      artist_id: artistId,
+                      title: newTierTitle.trim() || 'Membership',
+                      price_cents: cents,
+                    })
+                    if (error) {
+                      setFormError(error.message)
+                      return
+                    }
+                    await reloadMemberships(artistId)
+                    setNewTierTitle('')
+                    setNewTierPrice('9.99')
+                    setAddTierOpen(false)
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white text-sm hover:opacity-90"
+                >
+                  Save tier
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddTierOpen(false)
+                    setFormError(null)
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          ) : (
+          )}
+          {!addTierOpen && artistId && (
+            <button
+              type="button"
+              onClick={() => {
+                setFormError(null)
+                setAddTierOpen(true)
+              }}
+              className="mb-4 text-sm text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] hover:border-[var(--signal-ink)] transition-colors"
+            >
+              + Add subscription tier
+            </button>
+          )}
+          {memberships.length === 0 && !addTierOpen ? (
+            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm">
+              No tiers yet. Use <span className="text-[var(--signal-ink)]">+ Add subscription tier</span> above.
+            </div>
+          ) : memberships.length > 0 ? (
             <ul className="space-y-3">
               {memberships.map((m) => (
                 <li key={m.id} className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-4 flex justify-between items-center">
@@ -327,34 +673,168 @@ export function Dashboard() {
                 </li>
               ))}
             </ul>
-          )}
+          ) : null}
         </section>
 
         {/* Products: visual cards + Add product */}
         <section className="mb-[var(--space-2xl)]">
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Products</h2>
+          <input
+            ref={productFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              const pid = pendingProductUploadId.current
+              e.target.value = ''
+              pendingProductUploadId.current = null
+              if (!file || !artistId || !pid) return
+              setProductImageNotice(null)
+              const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+              const path = `product-covers/${artistId}/${pid}/${crypto.randomUUID()}.${ext}`
+              const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+              if (upErr) {
+                setProductImageNotice(`Upload failed: ${upErr.message}`)
+                return
+              }
+              const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+              const { error: dbErr } = await supabase.from('products').update({ image_url: urlData.publicUrl }).eq('id', pid).eq('artist_id', artistId)
+              if (dbErr) {
+                setProductImageNotice(dbErr.message)
+                return
+              }
+              await reloadProducts(artistId)
+              setProductImageNotice('Image saved.')
+            }}
+          />
           {addProductOpen && artistId && (
             <div className="mb-4 p-4 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]">
               <input type="text" placeholder="Product title" value={newProductTitle} onChange={(e) => setNewProductTitle(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
               <input type="text" placeholder="Price (e.g. 9.99)" value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
               <div className="flex gap-2">
-                <button type="button" onClick={async () => { if (!artistId) return; const cents = Math.round(parseFloat(newProductPrice) * 100) || 0; await supabase.from('products').insert({ artist_id: artistId, type: 'merch', title: newProductTitle || 'Untitled', price_cents: cents }); const { data } = await supabase.from('products').select('id, title').eq('artist_id', artistId); setProducts((data ?? []) as typeof products); setNewProductTitle(''); setNewProductPrice('9.99'); setAddProductOpen(false); }} className="px-3 py-1.5 rounded-lg bg-[var(--signal-gold)] text-white text-sm">Add</button>
-                <button type="button" onClick={() => setAddProductOpen(false)} className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm">Cancel</button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!artistId) return
+                    const cents = Math.round(parseFloat(newProductPrice) * 100) || 0
+                    const { error } = await supabase
+                      .from('products')
+                      .insert({ artist_id: artistId, type: 'merch', title: newProductTitle || 'Untitled', price_cents: cents })
+                    if (error) {
+                      setFormError(error.message)
+                      return
+                    }
+                    await reloadProducts(artistId)
+                    setNewProductTitle('')
+                    setNewProductPrice('9.99')
+                    setAddProductOpen(false)
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[var(--signal-gold)] text-white text-sm"
+                >
+                  Add
+                </button>
+                <button type="button" onClick={() => setAddProductOpen(false)} className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm">
+                  Cancel
+                </button>
               </div>
             </div>
           )}
           {!addProductOpen && artistId && (
             <button type="button" onClick={() => setAddProductOpen(true)} className="mb-4 text-sm text-[var(--signal-gold)] hover:opacity-80">+ Add product</button>
           )}
+          {productImageNotice && (
+            <p className="mb-3 text-sm text-[var(--signal-ink-muted)]" role="status">
+              {productImageNotice}
+            </p>
+          )}
           {products.length === 0 && !addProductOpen ? (
             <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm">
               No products yet. Add one above or connect Bandcamp/Shopify to sync.
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {products.map((p) => (
-                <div key={p.id} className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] aspect-square flex items-center justify-center p-4">
-                  <span className="text-[var(--signal-ink-muted)] text-sm text-center truncate w-full" style={{ fontFamily: 'var(--font-body)' }}>{p.title}</span>
+                <div
+                  key={p.id}
+                  className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
+                >
+                  <div className="relative aspect-[3/4] bg-[var(--signal-silver-light)]/40">
+                    {p.image_url ? (
+                      <img src={p.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <span className="text-[var(--signal-ink-muted)] text-sm text-center line-clamp-3" style={{ fontFamily: 'var(--font-body)' }}>
+                          {p.title}
+                        </span>
+                      </div>
+                    )}
+                    {generatingProductId === p.id && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-[var(--signal-ink)]">Generating…</div>
+                    )}
+                  </div>
+                  <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
+                    <p className="text-sm font-medium text-[var(--signal-ink)] truncate" title={p.title}>
+                      {p.title}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={generatingProductId !== null}
+                        onClick={() => {
+                          pendingProductUploadId.current = p.id
+                          productFileRef.current?.click()
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50"
+                      >
+                        Upload image
+                      </button>
+                      <button
+                        type="button"
+                        disabled={generatingProductId !== null || !artistId}
+                        onClick={async () => {
+                          if (!artistId) return
+                          setProductImageNotice(null)
+                          setGeneratingProductId(p.id)
+                          try {
+                            const session = await getSession()
+                            if (!session) {
+                              setProductImageNotice('Sign in again to generate.')
+                              return
+                            }
+                            const res = await fetch(apiUrl('/product-image-generate'), {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${session.access_token}`,
+                              },
+                              body: JSON.stringify({ product_id: p.id, artist_id: artistId }),
+                            })
+                            const raw = await res.text()
+                            let body: { error?: string; image_url?: string } = {}
+                            try {
+                              if (raw.trim()) body = JSON.parse(raw) as typeof body
+                            } catch {
+                              /* ignore */
+                            }
+                            if (!res.ok) {
+                              setProductImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                              return
+                            }
+                            await reloadProducts(artistId)
+                            setProductImageNotice('Cover image generated.')
+                          } catch {
+                            setProductImageNotice('Could not reach API. Run npm run dev:vercel alongside Vite.')
+                          } finally {
+                            setGeneratingProductId(null)
+                          }
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        {generatingProductId === p.id ? '…' : 'Generate (Gemini)'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

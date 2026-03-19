@@ -26,6 +26,7 @@ Signal is a next-generation music platform where live performance meets real-tim
 - **Discovery:** Pinterest-style masonry grid; visual-first, infinite scroll
 - **Live:** TikTok-style full-screen stream; gesture-based (swipe up/down/left/right)
 - **Aesthetic:** Luxury white, gold, silver; minimal, no button-heavy UI
+- **Assists:** **AI portrait enhancer** (Gemini) is on the Portrait page; **profile summary** uses **Perplexity** (if `PERPLEXITY_API_KEY` is set) or **Wikipedia** from Dashboard / Become an artist. Optional `VITE_ENABLE_AI_FEATURES=true` adds name-suggest on signup and a live “Avatar” host toggle.
 
 For full Lovable context (copy-paste into Lovable.dev), see [CONTEXT.md](CONTEXT.md).
 
@@ -64,7 +65,7 @@ For full Lovable context (copy-paste into Lovable.dev), see [CONTEXT.md](CONTEXT
 
 4. **Run**
 
-   **Frontend only** (no `/api` — you’ll get **HTTP 404** on Gemini enhance, Stripe, etc.):
+   **Frontend only** (no `/api` — you’ll get **HTTP 404** on Gemini enhance, bio research, Stripe, etc.):
 
    ```bash
    npm run dev
@@ -115,11 +116,14 @@ Serverless routes in `api/` are ready for production. Set the env vars in `.env.
 | `/api/stripe-checkout` | POST | Create Stripe Checkout Session (purchase or subscription) |
 | `/api/stripe-webhook` | POST | Stripe webhook (configure in Stripe Dashboard) |
 | `/api/avatar-generate` | POST | Store avatar; `mode: "enhance"` + `provider: "gemini"` uses **Gemini** native image (set `GEMINI_API_KEY`; optional `GEMINI_IMAGE_MODEL`) |
+| `/api/product-image-generate` | POST | Body `{ "product_id", "artist_id" }` — **Gemini** text-to-image cover, uploads to Storage (`avatars` bucket `product-covers/…`), updates `products.image_url` |
+| `/api/artist-bio-research` | POST | Body `{ "query": "Artist Name" }` — short bio via **Perplexity** (`PERPLEXITY_API_KEY`) or **Wikipedia** fallback; requires `Authorization: Bearer` (Supabase JWT) |
+| `/api/artist-bio-polish` | POST | Body `{ "draft": "…", "display_name"?: "…" }` — tightens the artist’s **own notes** with **Gemini** text (`GEMINI_API_KEY`; optional `GEMINI_TEXT_MODEL`, default `gemini-2.0-flash`). No web lookup. |
 | `/api/avatar-tts` | POST | TTS for avatar (ElevenLabs when key set) |
 | `/api/sync` | POST | Sync catalogue from Bandcamp / Apple Music / Shopify |
 | `/api/payouts-run` | POST | Cron: run artist payouts (optional `Authorization: Bearer CRON_SECRET`) |
 
-Run migrations in order: `00001_initial_schema.sql`, `00002_platform_and_integrations.sql`, `00003_grants.sql`, `00004_production_backend.sql`, `00005_integrations_unique.sql`, then `00006_avatars_bucket.sql` (creates the **avatars** storage bucket and policies so profile/avatar uploads work).
+Run migrations in order: `00001_initial_schema.sql`, `00002_platform_and_integrations.sql`, `00003_grants.sql`, `00004_production_backend.sql`, `00005_integrations_unique.sql`, then `00006_avatars_bucket.sql` (creates the **avatars** storage bucket and policies so profile/avatar uploads work), then **`00007_profile_visible.sql`** (online/offline profile visibility + stricter public read policies).
 
 ## Live streaming (RTMP server)
 

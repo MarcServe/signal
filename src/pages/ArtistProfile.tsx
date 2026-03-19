@@ -136,9 +136,14 @@ export function ArtistProfile() {
 
   if (notFound || !artist) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--signal-white)] px-4">
-        <p className="text-[var(--signal-ink-muted)] mb-4">Artist not found.</p>
-        <Link to="/" className="text-[var(--signal-gold)] hover:opacity-80">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--signal-white)] px-4 text-center max-w-md mx-auto">
+        <p className="text-[var(--signal-ink)] font-medium mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+          Profile isn’t available
+        </p>
+        <p className="text-[var(--signal-ink-muted)] text-sm mb-6 leading-relaxed">
+          This page may be hidden while the artist is offline, or the link might be incorrect.
+        </p>
+        <Link to="/" className="text-[var(--signal-gold)] hover:opacity-80 text-sm">
           Back to feed
         </Link>
       </div>
@@ -312,7 +317,7 @@ export function ArtistProfile() {
                   onClick={() => setPurchaseProduct(p)}
                   className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-white text-left hover:border-[var(--signal-gold)]/50 hover:shadow-md transition-all"
                 >
-                  <div className="aspect-square bg-[var(--signal-silver-light)]">
+                  <div className="aspect-[3/4] bg-[var(--signal-silver-light)]">
                     {p.image_url && (
                       <img src={p.image_url} alt="" className="w-full h-full object-cover" />
                     )}

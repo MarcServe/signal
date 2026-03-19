@@ -1,0 +1,159 @@
+/**
+ * POST /api/artist-bio-research
+ * Body: { query: string } — artist / stage name to look up
+ * Returns: { summary: string | null, source: 'perplexity' | 'wikipedia' | 'none', message?: string }
+ * Uses PERPLEXITY_API_KEY when set; otherwise English Wikipedia search + intro extract.
+ */
+import { supabaseAdmin } from './lib/supabase.js'
+
+const UA = 'Signal/1.0 (artist bio; +https://github.com/MarcServe/signal)'
+
+function getAuthHeader(req: { headers?: { authorization?: string } }): string | null {
+  const auth = req.headers?.authorization
+  if (!auth || !auth.startsWith('Bearer ')) return null
+  return auth.slice(7)
+}
+
+async function getUserFromJwt(token: string): Promise<{ id: string } | null> {
+  if (!supabaseAdmin) return null
+  const {
+    data: { user },
+    error,
+  } = await supabaseAdmin.auth.getUser(token)
+  return error ? null : user ? { id: user.id } : null
+}
+
+async function tryPerplexity(query: string): Promise<string | null> {
+  const key = process.env.PERPLEXITY_API_KEY
+  if (!key?.trim()) return null
+  try {
+    const res = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonar',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You write a short neutral artist biography for a music app (2–4 sentences). Plain text only: no markdown, no links, no bullet points.',
+          },
+          {
+            role: 'user',
+            content: `Write a concise public bio for the musician or band named: "${query}". If this is not a real or notable act, say only that no verified public profile was found.`,
+          },
+        ],
+        max_tokens: 280,
+        temperature: 0.3,
+      }),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] }
+    const text = data.choices?.[0]?.message?.content?.trim()
+    if (!text || text.length < 20) return null
+    return text.slice(0, 1200)
+  } catch {
+    return null
+  }
+}
+
+function truncateBio(text: string, max = 800): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  if (t.length <= max) return t
+  const cut = t.slice(0, max)
+  const last = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf(' '))
+  return (last > 200 ? cut.slice(0, last + 1) : cut).trim() + '…'
+}
+
+async function tryWikipedia(query: string): Promise<string | null> {
+  try {
+    const searchUrl = new URL('https://en.wikipedia.org/w/api.php')
+    searchUrl.searchParams.set('action', 'query')
+    searchUrl.searchParams.set('list', 'search')
+    searchUrl.searchParams.set('srsearch', query)
+    searchUrl.searchParams.set('srlimit', '1')
+    searchUrl.searchParams.set('format', 'json')
+
+    const sRes = await fetch(searchUrl.toString(), { headers: { 'User-Agent': UA } })
+    if (!sRes.ok) return null
+    const sJson = (await sRes.json()) as { query?: { search?: { title: string }[] } }
+    const title = sJson.query?.search?.[0]?.title
+    if (!title) return null
+
+    const exUrl = new URL('https://en.wikipedia.org/w/api.php')
+    exUrl.searchParams.set('action', 'query')
+    exUrl.searchParams.set('prop', 'extracts')
+    exUrl.searchParams.set('exintro', 'true')
+    exUrl.searchParams.set('explaintext', 'true')
+    exUrl.searchParams.set('titles', title)
+    exUrl.searchParams.set('format', 'json')
+
+    const eRes = await fetch(exUrl.toString(), { headers: { 'User-Agent': UA } })
+    if (!eRes.ok) return null
+    const eJson = (await eRes.json()) as {
+      query?: { pages?: Record<string, { extract?: string }> }
+    }
+    const pages = eJson.query?.pages
+    if (!pages) return null
+    const first = Object.values(pages)[0]
+    const extract = first?.extract?.trim()
+    if (!extract || extract.length < 30) return null
+    return truncateBio(extract)
+  } catch {
+    return null
+  }
+}
+
+export default async function handler(
+  req: {
+    method?: string
+    body?: { query?: string }
+    headers?: { authorization?: string }
+  },
+  res: { status: (n: number) => { json: (o: object) => void }; setHeader: (a: string, b: string) => void }
+): Promise<void> {
+  res.setHeader('Content-Type', 'application/json')
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' })
+    return
+  }
+  const token = getAuthHeader(req)
+  if (!token) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+  const user = await getUserFromJwt(token)
+  if (!user) {
+    res.status(401).json({ error: 'Invalid session' })
+    return
+  }
+
+  const query = typeof req.body?.query === 'string' ? req.body.query.trim() : ''
+  if (!query || query.length > 200) {
+    res.status(400).json({ error: 'query required (max 200 chars)' })
+    return
+  }
+
+  let summary = await tryPerplexity(query)
+  let source: 'perplexity' | 'wikipedia' | 'none' = summary ? 'perplexity' : 'none'
+
+  if (!summary) {
+    summary = await tryWikipedia(query)
+    if (summary) source = 'wikipedia'
+  }
+
+  if (!summary) {
+    res.status(200).json({
+      summary: null,
+      source: 'none',
+      message:
+        'No summary found. Add PERPLEXITY_API_KEY on the server for richer web results, or try a different spelling.',
+    })
+    return
+  }
+
+  res.status(200).json({ summary, source })
+}

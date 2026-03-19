@@ -8,7 +8,7 @@ export const DEMO_FEED_ITEMS: FeedItem[] = [
     item_type: 'artist',
     id: 'demo-1',
     artist_id: 'demo-artist-1',
-    title: 'NOVA',
+    title: 'DJ KRUST',
     image_url: '/demo/card1.png',
     is_live: true,
     cta: 'Watch',

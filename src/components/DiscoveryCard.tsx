@@ -5,12 +5,13 @@ export interface DiscoveryCardProps {
   item: FeedItem
 }
 
+/** Tall portrait “card” ratio everywhere for image-first feed (not square tiles). */
 const aspectByType: Record<FeedItemType, string> = {
   stream: 'aspect-[3/4]',
   artist: 'aspect-[3/4]',
-  product: 'aspect-square',
+  product: 'aspect-[3/4]',
   event: 'aspect-[4/3]',
-  track: 'aspect-square',
+  track: 'aspect-[3/4]',
 }
 
 export function DiscoveryCard({ item }: DiscoveryCardProps) {
