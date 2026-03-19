@@ -26,6 +26,37 @@ const MUSIC_INTEGRATION_CARDS = [
   },
 ] as const
 
+/** Memberships: select includes image_url when migration 00008 is applied; fallback keeps tiers working on older DBs. */
+async function fetchMembershipRows(
+  client: typeof supabase,
+  artistId: string
+): Promise<{ id: string; title: string; price_cents: number; image_url: string | null }[]> {
+  const full = await client.from('memberships').select('id, title, price_cents, image_url').eq('artist_id', artistId)
+  if (!full.error && full.data) {
+    return full.data as { id: string; title: string; price_cents: number; image_url: string | null }[]
+  }
+  const basic = await client.from('memberships').select('id, title, price_cents').eq('artist_id', artistId)
+  const rows = (basic.data ?? []) as { id: string; title: string; price_cents: number }[]
+  return rows.map((r) => ({ ...r, image_url: null }))
+}
+
+type CatalogKind = 'product' | 'membership' | 'event'
+
+function catalogImagePayload(
+  artistId: string,
+  kind: CatalogKind,
+  id: string,
+  extra?: { creative_prompt?: string; source_image_url?: string }
+): Record<string, string> {
+  const base: Record<string, string> = { artist_id: artistId }
+  if (extra?.creative_prompt?.trim()) base.creative_prompt = extra.creative_prompt.trim().slice(0, 1200)
+  if (extra?.source_image_url?.trim()) base.source_image_url = extra.source_image_url.trim()
+  if (kind === 'product') base.product_id = id
+  else if (kind === 'membership') base.membership_id = id
+  else base.event_id = id
+  return base
+}
+
 export function Dashboard() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   const navigate = useNavigate()
@@ -51,12 +82,17 @@ export function Dashboard() {
   const [artistLoaded, setArtistLoaded] = useState(false)
   const [streams, setStreams] = useState<{ id: string; title: string | null; is_live: boolean; camera_auto_rotate?: boolean }[]>([])
   const [products, setProducts] = useState<{ id: string; title: string; image_url: string | null }[]>([])
-  const [generatingProductId, setGeneratingProductId] = useState<string | null>(null)
-  const [productImageNotice, setProductImageNotice] = useState<string | null>(null)
-  const productFileRef = useRef<HTMLInputElement>(null)
-  const pendingProductUploadId = useRef<string | null>(null)
-  const [events, setEvents] = useState<{ id: string; title: string; starts_at: string; venue: string | null }[]>([])
-  const [memberships, setMemberships] = useState<{ id: string; title: string; price_cents: number }[]>([])
+  const [catalogBusy, setCatalogBusy] = useState<{ kind: CatalogKind; id: string } | null>(null)
+  const [catalogImageNotice, setCatalogImageNotice] = useState<string | null>(null)
+  const catalogFileRef = useRef<HTMLInputElement>(null)
+  const pendingCatalogUpload = useRef<{ kind: CatalogKind; id: string } | null>(null)
+  const [catalogPrompts, setCatalogPrompts] = useState<Record<string, string>>({})
+  const [events, setEvents] = useState<
+    { id: string; title: string; starts_at: string; venue: string | null; image_url: string | null }[]
+  >([])
+  const [memberships, setMemberships] = useState<
+    { id: string; title: string; price_cents: number; image_url: string | null }[]
+  >([])
   const [feeFreeToday, setFeeFreeToday] = useState(false)
   const [integrationsModal, setIntegrationsModal] = useState<string | null>(null)
   const [syncLoading, setSyncLoading] = useState<string | null>(null)
@@ -70,14 +106,21 @@ export function Dashboard() {
   const [addTierOpen, setAddTierOpen] = useState(false)
   const [newTierTitle, setNewTierTitle] = useState('')
   const [newTierPrice, setNewTierPrice] = useState('9.99')
-  const [formError, setFormError] = useState<string | null>(null)
+  const [eventFormError, setEventFormError] = useState<string | null>(null)
+  const [tierFormError, setTierFormError] = useState<string | null>(null)
+  const [productFormError, setProductFormError] = useState<string | null>(null)
 
   const reloadEvents = async (id: string) => {
-    const { data } = await supabase.from('events').select('id, title, starts_at, venue').eq('artist_id', id).order('starts_at', { ascending: true }).limit(20)
+    const { data } = await supabase
+      .from('events')
+      .select('id, title, starts_at, venue, image_url')
+      .eq('artist_id', id)
+      .order('starts_at', { ascending: true })
+      .limit(20)
     setEvents((data ?? []) as typeof events)
   }
   const reloadMemberships = async (id: string) => {
-    const { data } = await supabase.from('memberships').select('id, title, price_cents').eq('artist_id', id)
+    const { data } = await supabase.from('memberships').select('id, title, price_cents, image_url').eq('artist_id', id)
     setMemberships((data ?? []) as typeof memberships)
   }
   const reloadProducts = async (id: string) => {
@@ -143,8 +186,14 @@ export function Dashboard() {
         if (data.id) {
           supabase.from('streams').select('id, title, is_live, camera_auto_rotate').eq('artist_id', data.id).order('created_at', { ascending: false }).limit(10).then(({ data: s }) => setStreams((s ?? []) as typeof streams))
           supabase.from('products').select('id, title, image_url').eq('artist_id', data.id).limit(40).then(({ data: p }) => setProducts((p ?? []) as typeof products))
-          supabase.from('events').select('id, title, starts_at, venue').eq('artist_id', data.id).order('starts_at', { ascending: true }).limit(20).then(({ data: e }) => setEvents((e ?? []) as typeof events))
-          supabase.from('memberships').select('id, title, price_cents').eq('artist_id', data.id).then(({ data: m }) => setMemberships((m ?? []) as typeof memberships))
+          supabase
+            .from('events')
+            .select('id, title, starts_at, venue, image_url')
+            .eq('artist_id', data.id)
+            .order('starts_at', { ascending: true })
+            .limit(20)
+            .then(({ data: e }) => setEvents((e ?? []) as typeof events))
+          void fetchMembershipRows(supabase, data.id).then((m) => setMemberships(m))
         }
       })
     supabase
@@ -455,47 +504,6 @@ export function Dashboard() {
           </div>
         )}
 
-        {/* Payouts + Integrations (visual cards) */}
-        {artistId && (
-          <section
-            className="mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] p-4 sm:p-5"
-            style={{
-              backgroundImage:
-                "linear-gradient(145deg, rgba(16,16,16,0.02), rgba(212,175,55,0.05)), url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='120' viewBox='0 0 240 120'%3E%3Cg fill='none' stroke='%23d4af37' stroke-opacity='0.18' stroke-width='2'%3E%3Cpath d='M0 70 C20 30 40 30 60 70 C80 110 100 110 120 70 C140 30 160 30 180 70 C200 110 220 110 240 70'/%3E%3C/g%3E%3Cg fill='%23999' fill-opacity='0.12'%3E%3Crect x='20' y='32' width='6' height='26'/%3E%3Crect x='34' y='24' width='6' height='38'/%3E%3Crect x='48' y='38' width='6' height='22'/%3E%3Crect x='62' y='18' width='6' height='48'/%3E%3C/g%3E%3C/svg%3E\")",
-              backgroundSize: 'cover, 320px 160px',
-              backgroundPosition: 'center, right bottom',
-            }}
-          >
-            <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              Payouts
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]/95 backdrop-blur-sm">
-                <div
-                  className="h-20 flex items-center justify-center"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(135deg, rgba(99,91,255,0.16), rgba(99,91,255,0.04)), radial-gradient(circle at 80% 20%, rgba(99,91,255,0.35), transparent 55%)",
-                  }}
-                >
-                  <img src="https://cdn.simpleicons.org/stripe/635BFF" alt="Stripe logo" className="w-9 h-9 object-contain" loading="lazy" />
-                </div>
-                <div className="p-3">
-                  <p className="text-sm font-medium text-[var(--signal-ink)]">Stripe</p>
-                  <p className="text-xs text-[var(--signal-ink-muted)] mt-1">Artist payouts and settlement</p>
-                  <button
-                    type="button"
-                    onClick={handleStripeConnect}
-                    className="mt-2 text-sm text-[var(--signal-gold)] hover:opacity-80"
-                  >
-                    {artist?.stripe_onboarding_complete ? 'Connected' : 'Connect'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
         {/* Go live: RTMP + stream key */}
         {artistId && (
           <section className="mb-[var(--space-2xl)]">
@@ -575,9 +583,9 @@ export function Dashboard() {
         {/* Events */}
         <section className="mb-[var(--space-2xl)]">
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Events</h2>
-          {formError && (addEventOpen || addTierOpen) && (
+          {eventFormError && addEventOpen && (
             <p className="mb-2 text-sm text-red-600" role="alert">
-              {formError}
+              {eventFormError}
             </p>
           )}
           {addEventOpen && artistId && (
@@ -610,9 +618,9 @@ export function Dashboard() {
                   type="button"
                   onClick={async () => {
                     if (!artistId) return
-                    setFormError(null)
+                    setEventFormError(null)
                     if (!newEventStartsAt.trim()) {
-                      setFormError('Choose a date and time for the event.')
+                      setEventFormError('Choose a date and time for the event.')
                       return
                     }
                     const { error } = await supabase.from('events').insert({
@@ -622,7 +630,7 @@ export function Dashboard() {
                       venue: newEventVenue.trim() || null,
                     })
                     if (error) {
-                      setFormError(error.message)
+                      setEventFormError(error.message)
                       return
                     }
                     await reloadEvents(artistId)
@@ -639,7 +647,7 @@ export function Dashboard() {
                   type="button"
                   onClick={() => {
                     setAddEventOpen(false)
-                    setFormError(null)
+                    setEventFormError(null)
                   }}
                   className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm"
                 >
@@ -652,7 +660,7 @@ export function Dashboard() {
             <button
               type="button"
               onClick={() => {
-                setFormError(null)
+                setEventFormError(null)
                 setAddEventOpen(true)
               }}
               className="mb-4 text-sm text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] hover:border-[var(--signal-ink)] transition-colors"
@@ -665,25 +673,174 @@ export function Dashboard() {
               No events yet. Use <span className="text-[var(--signal-ink)]">+ Add event</span> above.
             </div>
           ) : events.length > 0 ? (
-            <ul className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {events.map((ev) => (
-                <li key={ev.id} className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-4 flex justify-between items-center">
-                  <div>
+                <div
+                  key={ev.id}
+                  className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
+                >
+                  <div className="relative aspect-video bg-[var(--signal-silver-light)]/40">
+                    {ev.image_url ? (
+                      <img src={ev.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <span className="text-sm font-medium text-[var(--signal-ink)] text-center">{ev.title}</span>
+                      </div>
+                    )}
+                    {catalogBusy?.kind === 'event' && catalogBusy.id === ev.id && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-[var(--signal-ink)]">
+                        Working…
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
                     <p className="text-sm font-medium text-[var(--signal-ink)]">{ev.title}</p>
                     <p className="text-xs text-[var(--signal-ink-muted)]">
-                      {new Date(ev.starts_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                      {new Date(ev.starts_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                       {ev.venue ? ` · ${ev.venue}` : ''}
                     </p>
+                    <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
+                      Describe poster / vibe for Gemini (optional)
+                    </label>
+                    <textarea
+                      value={catalogPrompts[`event:${ev.id}`] ?? ''}
+                      onChange={(e) =>
+                        setCatalogPrompts((prev) => ({ ...prev, [`event:${ev.id}`]: e.target.value }))
+                      }
+                      placeholder="e.g. Warehouse lights, gold typography feel (no text), crowd energy…"
+                      rows={2}
+                      disabled={catalogBusy !== null}
+                      className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={catalogBusy !== null}
+                        onClick={() => {
+                          pendingCatalogUpload.current = { kind: 'event', id: ev.id }
+                          catalogFileRef.current?.click()
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50"
+                      >
+                        Upload
+                      </button>
+                      <button
+                        type="button"
+                        disabled={catalogBusy !== null || !artistId}
+                        onClick={async () => {
+                          if (!artistId) return
+                          setCatalogImageNotice(null)
+                          setCatalogBusy({ kind: 'event', id: ev.id })
+                          try {
+                            const session = await getSession()
+                            if (!session) {
+                              setCatalogImageNotice('Sign in again.')
+                              return
+                            }
+                            const prompt = catalogPrompts[`event:${ev.id}`]?.trim()
+                            const res = await fetch(apiUrl('/product-image-generate'), {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${session.access_token}`,
+                              },
+                              body: JSON.stringify(
+                                catalogImagePayload(artistId, 'event', ev.id, {
+                                  creative_prompt: prompt || undefined,
+                                })
+                              ),
+                            })
+                            const raw = await res.text()
+                            let body: { error?: string } = {}
+                            try {
+                              if (raw.trim()) body = JSON.parse(raw) as typeof body
+                            } catch {
+                              /* ignore */
+                            }
+                            if (!res.ok) {
+                              setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                              return
+                            }
+                            await reloadEvents(artistId)
+                            setCatalogImageNotice('Event image generated.')
+                          } catch {
+                            setCatalogImageNotice('Could not reach API.')
+                          } finally {
+                            setCatalogBusy(null)
+                          }
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        {catalogBusy?.kind === 'event' && catalogBusy.id === ev.id ? '…' : 'Generate'}
+                      </button>
+                      {ev.image_url && (
+                        <button
+                          type="button"
+                          disabled={catalogBusy !== null || !artistId}
+                          onClick={async () => {
+                            if (!artistId || !ev.image_url) return
+                            setCatalogImageNotice(null)
+                            setCatalogBusy({ kind: 'event', id: ev.id })
+                            try {
+                              const session = await getSession()
+                              if (!session) {
+                                setCatalogImageNotice('Sign in again.')
+                                return
+                              }
+                              const hint = catalogPrompts[`event:${ev.id}`]?.trim()
+                              const res = await fetch(apiUrl('/product-image-generate'), {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  Authorization: `Bearer ${session.access_token}`,
+                                },
+                                body: JSON.stringify(
+                                  catalogImagePayload(artistId, 'event', ev.id, {
+                                    source_image_url: ev.image_url,
+                                    creative_prompt: hint || undefined,
+                                  })
+                                ),
+                              })
+                              const raw = await res.text()
+                              let body: { error?: string } = {}
+                              try {
+                                if (raw.trim()) body = JSON.parse(raw) as typeof body
+                              } catch {
+                                /* ignore */
+                              }
+                              if (!res.ok) {
+                                setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                                return
+                              }
+                              await reloadEvents(artistId)
+                              setCatalogImageNotice('Event image cleaned.')
+                            } catch {
+                              setCatalogImageNotice('Could not reach API.')
+                            } finally {
+                              setCatalogBusy(null)
+                            }
+                          }}
+                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
+                        >
+                          Clean &amp; standardize
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : null}
         </section>
 
         {/* Subscription tiers (memberships) */}
         <section className="mb-[var(--space-2xl)]">
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Subscription tiers</h2>
+          {tierFormError && addTierOpen && (
+            <p className="mb-2 text-sm text-red-600" role="alert">
+              {tierFormError}
+            </p>
+          )}
           {addTierOpen && artistId && (
             <div className="mb-4 p-4 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] space-y-2">
               <input
@@ -705,10 +862,10 @@ export function Dashboard() {
                   type="button"
                   onClick={async () => {
                     if (!artistId) return
-                    setFormError(null)
+                    setTierFormError(null)
                     const cents = Math.round(parseFloat(newTierPrice) * 100)
                     if (Number.isNaN(cents) || cents < 0) {
-                      setFormError('Enter a valid price.')
+                      setTierFormError('Enter a valid price.')
                       return
                     }
                     const { error } = await supabase.from('memberships').insert({
@@ -717,7 +874,7 @@ export function Dashboard() {
                       price_cents: cents,
                     })
                     if (error) {
-                      setFormError(error.message)
+                      setTierFormError(error.message)
                       return
                     }
                     await reloadMemberships(artistId)
@@ -733,7 +890,7 @@ export function Dashboard() {
                   type="button"
                   onClick={() => {
                     setAddTierOpen(false)
-                    setFormError(null)
+                    setTierFormError(null)
                   }}
                   className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm"
                 >
@@ -746,7 +903,7 @@ export function Dashboard() {
             <button
               type="button"
               onClick={() => {
-                setFormError(null)
+                setTierFormError(null)
                 setAddTierOpen(true)
               }}
               className="mb-4 text-sm text-[var(--signal-ink-muted)] border-b border-[var(--signal-silver-light)] hover:border-[var(--signal-ink)] transition-colors"
@@ -759,14 +916,161 @@ export function Dashboard() {
               No tiers yet. Use <span className="text-[var(--signal-ink)]">+ Add subscription tier</span> above.
             </div>
           ) : memberships.length > 0 ? (
-            <ul className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {memberships.map((m) => (
-                <li key={m.id} className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-4 flex justify-between items-center">
-                  <span className="text-sm font-medium text-[var(--signal-ink)]">{m.title}</span>
-                  <span className="text-sm text-[var(--signal-gold)]">${(m.price_cents / 100).toFixed(2)}/mo</span>
-                </li>
+                <div
+                  key={m.id}
+                  className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
+                >
+                  <div className="relative aspect-[3/4] bg-[var(--signal-silver-light)]/40">
+                    {m.image_url ? (
+                      <img src={m.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+                        <span className="text-sm font-medium text-[var(--signal-ink)]">{m.title}</span>
+                        <span className="text-[var(--signal-gold)] text-sm mt-1">${(m.price_cents / 100).toFixed(2)}/mo</span>
+                      </div>
+                    )}
+                    {catalogBusy?.kind === 'membership' && catalogBusy.id === m.id && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-[var(--signal-ink)]">
+                        Working…
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
+                    <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{m.title}</p>
+                    <p className="text-xs text-[var(--signal-gold)]">${(m.price_cents / 100).toFixed(2)}/mo</p>
+                    <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
+                      Describe for Gemini (optional)
+                    </label>
+                    <textarea
+                      value={catalogPrompts[`membership:${m.id}`] ?? ''}
+                      onChange={(e) =>
+                        setCatalogPrompts((prev) => ({ ...prev, [`membership:${m.id}`]: e.target.value }))
+                      }
+                      placeholder="e.g. Gold accent, backstage pass vibe, velvet texture…"
+                      rows={2}
+                      disabled={catalogBusy !== null}
+                      className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={catalogBusy !== null}
+                        onClick={() => {
+                          pendingCatalogUpload.current = { kind: 'membership', id: m.id }
+                          catalogFileRef.current?.click()
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50"
+                      >
+                        Upload
+                      </button>
+                      <button
+                        type="button"
+                        disabled={catalogBusy !== null || !artistId}
+                        onClick={async () => {
+                          if (!artistId) return
+                          setCatalogImageNotice(null)
+                          setCatalogBusy({ kind: 'membership', id: m.id })
+                          try {
+                            const session = await getSession()
+                            if (!session) {
+                              setCatalogImageNotice('Sign in again.')
+                              return
+                            }
+                            const prompt = catalogPrompts[`membership:${m.id}`]?.trim()
+                            const res = await fetch(apiUrl('/product-image-generate'), {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${session.access_token}`,
+                              },
+                              body: JSON.stringify(
+                                catalogImagePayload(artistId, 'membership', m.id, {
+                                  creative_prompt: prompt || undefined,
+                                })
+                              ),
+                            })
+                            const raw = await res.text()
+                            let body: { error?: string } = {}
+                            try {
+                              if (raw.trim()) body = JSON.parse(raw) as typeof body
+                            } catch {
+                              /* ignore */
+                            }
+                            if (!res.ok) {
+                              setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                              return
+                            }
+                            await reloadMemberships(artistId)
+                            setCatalogImageNotice('Tier image generated.')
+                          } catch {
+                            setCatalogImageNotice('Could not reach API.')
+                          } finally {
+                            setCatalogBusy(null)
+                          }
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        {catalogBusy?.kind === 'membership' && catalogBusy.id === m.id ? '…' : 'Generate'}
+                      </button>
+                      {m.image_url && (
+                        <button
+                          type="button"
+                          disabled={catalogBusy !== null || !artistId}
+                          onClick={async () => {
+                            if (!artistId || !m.image_url) return
+                            setCatalogImageNotice(null)
+                            setCatalogBusy({ kind: 'membership', id: m.id })
+                            try {
+                              const session = await getSession()
+                              if (!session) {
+                                setCatalogImageNotice('Sign in again.')
+                                return
+                              }
+                              const hint = catalogPrompts[`membership:${m.id}`]?.trim()
+                              const res = await fetch(apiUrl('/product-image-generate'), {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  Authorization: `Bearer ${session.access_token}`,
+                                },
+                                body: JSON.stringify(
+                                  catalogImagePayload(artistId, 'membership', m.id, {
+                                    source_image_url: m.image_url,
+                                    creative_prompt: hint || undefined,
+                                  })
+                                ),
+                              })
+                              const raw = await res.text()
+                              let body: { error?: string } = {}
+                              try {
+                                if (raw.trim()) body = JSON.parse(raw) as typeof body
+                              } catch {
+                                /* ignore */
+                              }
+                              if (!res.ok) {
+                                setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                                return
+                              }
+                              await reloadMemberships(artistId)
+                              setCatalogImageNotice('Tier image cleaned.')
+                            } catch {
+                              setCatalogImageNotice('Could not reach API.')
+                            } finally {
+                              setCatalogBusy(null)
+                            }
+                          }}
+                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
+                        >
+                          Clean &amp; standardize
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : null}
         </section>
 
@@ -774,36 +1078,55 @@ export function Dashboard() {
         <section className="mb-[var(--space-2xl)]">
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Products</h2>
           <input
-            ref={productFileRef}
+            ref={catalogFileRef}
             type="file"
             accept="image/*"
             className="hidden"
             onChange={async (e) => {
               const file = e.target.files?.[0]
-              const pid = pendingProductUploadId.current
+              const pending = pendingCatalogUpload.current
               e.target.value = ''
-              pendingProductUploadId.current = null
-              if (!file || !artistId || !pid) return
-              setProductImageNotice(null)
+              pendingCatalogUpload.current = null
+              if (!file || !artistId || !pending) return
+              setCatalogImageNotice(null)
               const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-              const path = `product-covers/${artistId}/${pid}/${crypto.randomUUID()}.${ext}`
+              const sub =
+                pending.kind === 'product'
+                  ? `product-covers/${artistId}/${pending.id}`
+                  : pending.kind === 'membership'
+                    ? `membership-uploads/${artistId}/${pending.id}`
+                    : `event-uploads/${artistId}/${pending.id}`
+              const path = `${sub}/${crypto.randomUUID()}.${ext}`
               const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
               if (upErr) {
-                setProductImageNotice(`Upload failed: ${upErr.message}`)
+                setCatalogImageNotice(`Upload failed: ${upErr.message}`)
                 return
               }
               const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
-              const { error: dbErr } = await supabase.from('products').update({ image_url: urlData.publicUrl }).eq('id', pid).eq('artist_id', artistId)
+              const table =
+                pending.kind === 'product' ? 'products' : pending.kind === 'membership' ? 'memberships' : 'events'
+              const patch =
+                table === 'memberships'
+                  ? { image_url: urlData.publicUrl }
+                  : { image_url: urlData.publicUrl, updated_at: new Date().toISOString() }
+              const { error: dbErr } = await supabase.from(table).update(patch).eq('id', pending.id).eq('artist_id', artistId)
               if (dbErr) {
-                setProductImageNotice(dbErr.message)
+                setCatalogImageNotice(dbErr.message)
                 return
               }
-              await reloadProducts(artistId)
-              setProductImageNotice('Image saved.')
+              if (pending.kind === 'product') await reloadProducts(artistId)
+              else if (pending.kind === 'membership') await reloadMemberships(artistId)
+              else await reloadEvents(artistId)
+              setCatalogImageNotice('Image saved. Use “Clean & standardize” for a polished catalog look.')
             }}
           />
           {addProductOpen && artistId && (
             <div className="mb-4 p-4 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]">
+              {productFormError && (
+                <p className="mb-2 text-sm text-red-600" role="alert">
+                  {productFormError}
+                </p>
+              )}
               <input type="text" placeholder="Product title" value={newProductTitle} onChange={(e) => setNewProductTitle(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
               <input type="text" placeholder="Price (e.g. 9.99)" value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
               <div className="flex gap-2">
@@ -811,12 +1134,13 @@ export function Dashboard() {
                   type="button"
                   onClick={async () => {
                     if (!artistId) return
+                    setProductFormError(null)
                     const cents = Math.round(parseFloat(newProductPrice) * 100) || 0
                     const { error } = await supabase
                       .from('products')
                       .insert({ artist_id: artistId, type: 'merch', title: newProductTitle || 'Untitled', price_cents: cents })
                     if (error) {
-                      setFormError(error.message)
+                      setProductFormError(error.message)
                       return
                     }
                     await reloadProducts(artistId)
@@ -828,7 +1152,14 @@ export function Dashboard() {
                 >
                   Add
                 </button>
-                <button type="button" onClick={() => setAddProductOpen(false)} className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddProductOpen(false)
+                    setProductFormError(null)
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-sm"
+                >
                   Cancel
                 </button>
               </div>
@@ -837,9 +1168,9 @@ export function Dashboard() {
           {!addProductOpen && artistId && (
             <button type="button" onClick={() => setAddProductOpen(true)} className="mb-4 text-sm text-[var(--signal-gold)] hover:opacity-80">+ Add product</button>
           )}
-          {productImageNotice && (
+          {catalogImageNotice && (
             <p className="mb-3 text-sm text-[var(--signal-ink-muted)]" role="status">
-              {productImageNotice}
+              {catalogImageNotice}
             </p>
           )}
           {products.length === 0 && !addProductOpen ? (
@@ -863,46 +1194,66 @@ export function Dashboard() {
                         </span>
                       </div>
                     )}
-                    {generatingProductId === p.id && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-[var(--signal-ink)]">Generating…</div>
+                    {catalogBusy?.kind === 'product' && catalogBusy.id === p.id && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-[var(--signal-ink)]">
+                        Working…
+                      </div>
                     )}
                   </div>
                   <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
                     <p className="text-sm font-medium text-[var(--signal-ink)] truncate" title={p.title}>
                       {p.title}
                     </p>
+                    <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
+                      Describe for Gemini (optional)
+                    </label>
+                    <textarea
+                      value={catalogPrompts[`product:${p.id}`] ?? ''}
+                      onChange={(e) =>
+                        setCatalogPrompts((prev) => ({ ...prev, [`product:${p.id}`]: e.target.value }))
+                      }
+                      placeholder="e.g. Black vinyl on marble, gold foil, moody club lighting…"
+                      rows={2}
+                      disabled={catalogBusy !== null}
+                      className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+                    />
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={generatingProductId !== null}
+                        disabled={catalogBusy !== null}
                         onClick={() => {
-                          pendingProductUploadId.current = p.id
-                          productFileRef.current?.click()
+                          pendingCatalogUpload.current = { kind: 'product', id: p.id }
+                          catalogFileRef.current?.click()
                         }}
                         className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50"
                       >
-                        Upload image
+                        Upload
                       </button>
                       <button
                         type="button"
-                        disabled={generatingProductId !== null || !artistId}
+                        disabled={catalogBusy !== null || !artistId}
                         onClick={async () => {
                           if (!artistId) return
-                          setProductImageNotice(null)
-                          setGeneratingProductId(p.id)
+                          setCatalogImageNotice(null)
+                          setCatalogBusy({ kind: 'product', id: p.id })
                           try {
                             const session = await getSession()
                             if (!session) {
-                              setProductImageNotice('Sign in again to generate.')
+                              setCatalogImageNotice('Sign in again to generate.')
                               return
                             }
+                            const prompt = catalogPrompts[`product:${p.id}`]?.trim()
                             const res = await fetch(apiUrl('/product-image-generate'), {
                               method: 'POST',
                               headers: {
                                 'Content-Type': 'application/json',
                                 Authorization: `Bearer ${session.access_token}`,
                               },
-                              body: JSON.stringify({ product_id: p.id, artist_id: artistId }),
+                              body: JSON.stringify(
+                                catalogImagePayload(artistId, 'product', p.id, {
+                                  creative_prompt: prompt || undefined,
+                                })
+                              ),
                             })
                             const raw = await res.text()
                             let body: { error?: string; image_url?: string } = {}
@@ -912,21 +1263,73 @@ export function Dashboard() {
                               /* ignore */
                             }
                             if (!res.ok) {
-                              setProductImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                              setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
                               return
                             }
                             await reloadProducts(artistId)
-                            setProductImageNotice('Cover image generated.')
+                            setCatalogImageNotice('Image generated from your description.')
                           } catch {
-                            setProductImageNotice('Could not reach API. Run npm run dev:vercel alongside Vite.')
+                            setCatalogImageNotice('Could not reach API. Run npm run dev:vercel alongside Vite.')
                           } finally {
-                            setGeneratingProductId(null)
+                            setCatalogBusy(null)
                           }
                         }}
                         className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
                       >
-                        {generatingProductId === p.id ? '…' : 'Generate (Gemini)'}
+                        {catalogBusy?.kind === 'product' && catalogBusy.id === p.id ? '…' : 'Generate'}
                       </button>
+                      {p.image_url && (
+                        <button
+                          type="button"
+                          disabled={catalogBusy !== null || !artistId}
+                          onClick={async () => {
+                            if (!artistId || !p.image_url) return
+                            setCatalogImageNotice(null)
+                            setCatalogBusy({ kind: 'product', id: p.id })
+                            try {
+                              const session = await getSession()
+                              if (!session) {
+                                setCatalogImageNotice('Sign in again.')
+                                return
+                              }
+                              const hint = catalogPrompts[`product:${p.id}`]?.trim()
+                              const res = await fetch(apiUrl('/product-image-generate'), {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  Authorization: `Bearer ${session.access_token}`,
+                                },
+                                body: JSON.stringify(
+                                  catalogImagePayload(artistId, 'product', p.id, {
+                                    source_image_url: p.image_url,
+                                    creative_prompt: hint || undefined,
+                                  })
+                                ),
+                              })
+                              const raw = await res.text()
+                              let body: { error?: string } = {}
+                              try {
+                                if (raw.trim()) body = JSON.parse(raw) as typeof body
+                              } catch {
+                                /* ignore */
+                              }
+                              if (!res.ok) {
+                                setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                                return
+                              }
+                              await reloadProducts(artistId)
+                              setCatalogImageNotice('Photo cleaned and standardized.')
+                            } catch {
+                              setCatalogImageNotice('Could not reach API.')
+                            } finally {
+                              setCatalogBusy(null)
+                            }
+                          }}
+                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
+                        >
+                          Clean &amp; standardize
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -935,76 +1338,160 @@ export function Dashboard() {
           )}
         </section>
 
-        {/* Connect your music */}
-        <section
-          className="mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] p-4 sm:p-5"
-          style={{
-            backgroundImage:
-              "linear-gradient(165deg, rgba(212,175,55,0.08), rgba(255,255,255,0.3)), url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='140' viewBox='0 0 260 140'%3E%3Cg fill='none' stroke='%23d4af37' stroke-opacity='0.14' stroke-width='2'%3E%3Cpath d='M0 95 Q30 72 60 95 T120 95 T180 95 T240 95'/%3E%3Cpath d='M0 110 Q30 87 60 110 T120 110 T180 110 T240 110'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='0.08'%3E%3Ccircle cx='210' cy='40' r='18'/%3E%3Ccircle cx='210' cy='40' r='6' fill='%23fff' fill-opacity='0.22'/%3E%3C/g%3E%3C/svg%3E\")",
-            backgroundSize: 'cover, 340px 180px',
-            backgroundPosition: 'center, right 14px bottom 8px',
-          }}
-        >
-          <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-3" style={{ fontFamily: 'var(--font-display)' }}>Connect your music</h2>
-          <p className="text-sm text-[var(--signal-ink-muted)] mb-3">Link your catalogue and sales in one place.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {MUSIC_INTEGRATION_CARDS.map((card) => (
-              <div
-                key={card.key}
-                className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]/95 backdrop-blur-sm"
-              >
-                <div
-                  className="h-16 flex items-center justify-center"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(135deg, rgba(212,175,55,0.09), rgba(255,255,255,0.2)), repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 2px, transparent 2px, transparent 10px)",
-                  }}
-                >
-                  <img src={card.imageUrl} alt={`${card.label} logo`} className="w-10 h-10 object-contain" loading="lazy" />
-                </div>
-                <div className="p-3">
-                  <p className="text-sm font-medium text-[var(--signal-ink)]">{card.label}</p>
-                  <p className="text-xs text-[var(--signal-ink-muted)] mt-0.5">{card.subtitle}</p>
-                  <div className="mt-2 flex items-center gap-2">
+        {/* Payouts — collapsed by default (above Connect your music) */}
+        {artistId && (
+          <details className="group/payouts mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+            <summary
+              className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              <span>Payouts</span>
+              <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+                <span className="group-open/payouts:hidden">Expand</span>
+                <span className="hidden group-open/payouts:inline">Collapse</span>
+              </span>
+            </summary>
+            <div
+              className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70"
+              style={{
+                backgroundImage:
+                  "linear-gradient(145deg, rgba(16,16,16,0.02), rgba(212,175,55,0.05)), url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='120' viewBox='0 0 240 120'%3E%3Cg fill='none' stroke='%23d4af37' stroke-opacity='0.18' stroke-width='2'%3E%3Cpath d='M0 70 C20 30 40 30 60 70 C80 110 100 110 120 70 C140 30 160 30 180 70 C200 110 220 110 240 70'/%3E%3C/g%3E%3Cg fill='%23999' fill-opacity='0.12'%3E%3Crect x='20' y='32' width='6' height='26'/%3E%3Crect x='34' y='24' width='6' height='38'/%3E%3Crect x='48' y='38' width='6' height='22'/%3E%3Crect x='62' y='18' width='6' height='48'/%3E%3C/g%3E%3C/svg%3E\")",
+                backgroundSize: 'cover, 320px 160px',
+                backgroundPosition: 'center, right bottom',
+              }}
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                <div className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]/95 backdrop-blur-sm">
+                  <div
+                    className="h-20 flex items-center justify-center"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(135deg, rgba(99,91,255,0.16), rgba(99,91,255,0.04)), radial-gradient(circle at 80% 20%, rgba(99,91,255,0.35), transparent 55%)",
+                    }}
+                  >
+                    <img src="https://cdn.simpleicons.org/stripe/635BFF" alt="Stripe logo" className="w-9 h-9 object-contain" loading="lazy" />
+                  </div>
+                  <div className="p-3">
+                    <p className="text-sm font-medium text-[var(--signal-ink)]">Stripe</p>
+                    <p className="text-xs text-[var(--signal-ink-muted)] mt-1">Artist payouts and settlement</p>
                     <button
                       type="button"
-                      onClick={() => {
-                        setIntegrationsModal(card.key)
-                        if (artistId) {
-                          supabase.from('integrations').upsert({ artist_id: artistId, service_name: card.key, api_key: 'placeholder', updated_at: new Date().toISOString() }, { onConflict: 'artist_id,service_name' }).then(() => {})
-                        }
-                      }}
-                      className="text-xs text-[var(--signal-ink)] hover:text-[var(--signal-gold)]"
+                      onClick={handleStripeConnect}
+                      className="mt-2 text-sm text-[var(--signal-gold)] hover:opacity-80"
                     >
-                      Connect
-                    </button>
-                    <button
-                        type="button"
-                      disabled={syncLoading === card.key}
-                      onClick={async () => {
-                        if (!artistId) return
-                        setSyncLoading(card.key)
-                        const session = await getSession()
-                        if (!session) { setSyncLoading(null); return }
-                        await fetch(apiUrl('/sync'), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ artist_id: artistId, service: card.key }) })
-                        setSyncLoading(null)
-                      }}
-                      className="text-xs text-[var(--signal-gold)] hover:opacity-80 disabled:opacity-50"
-                    >
-                      {syncLoading === card.key ? 'Syncing…' : 'Sync'}
+                      {artist?.stripe_onboarding_complete ? 'Connected' : 'Connect'}
                     </button>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-          {integrationsModal && (
-            <div className="mt-4 p-4 rounded-[var(--radius-md)] bg-[var(--signal-silver-light)]/30 text-sm text-[var(--signal-ink-muted)]">
-              <p>Connect your store — we’ll pull your catalogue. Add API keys in settings or use Sync after connecting.</p>
-              <button type="button" onClick={() => setIntegrationsModal(null)} className="mt-2 text-[var(--signal-gold)] hover:opacity-80">Dismiss</button>
             </div>
-          )}
-        </section>
+          </details>
+        )}
+
+        {/* Connect your music — collapsed by default */}
+        <details className="group/music mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+          <summary
+            className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            <span>Connect your music</span>
+            <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+              <span className="group-open/music:hidden">Expand</span>
+              <span className="hidden group-open/music:inline">Collapse</span>
+            </span>
+          </summary>
+          <div
+            className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70"
+            style={{
+              backgroundImage:
+                "linear-gradient(165deg, rgba(212,175,55,0.08), rgba(255,255,255,0.3)), url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='140' viewBox='0 0 260 140'%3E%3Cg fill='none' stroke='%23d4af37' stroke-opacity='0.14' stroke-width='2'%3E%3Cpath d='M0 95 Q30 72 60 95 T120 95 T180 95 T240 95'/%3E%3Cpath d='M0 110 Q30 87 60 110 T120 110 T180 110 T240 110'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='0.08'%3E%3Ccircle cx='210' cy='40' r='18'/%3E%3Ccircle cx='210' cy='40' r='6' fill='%23fff' fill-opacity='0.22'/%3E%3C/g%3E%3C/svg%3E\")",
+              backgroundSize: 'cover, 340px 180px',
+              backgroundPosition: 'center, right 14px bottom 8px',
+            }}
+          >
+            <p className="text-sm text-[var(--signal-ink-muted)] mb-3 pt-3">Link your catalogue and sales in one place.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {MUSIC_INTEGRATION_CARDS.map((card) => (
+                <div
+                  key={card.key}
+                  className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]/95 backdrop-blur-sm"
+                >
+                  <div
+                    className="h-16 flex items-center justify-center"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(135deg, rgba(212,175,55,0.09), rgba(255,255,255,0.2)), repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 2px, transparent 2px, transparent 10px)",
+                    }}
+                  >
+                    <img src={card.imageUrl} alt={`${card.label} logo`} className="w-10 h-10 object-contain" loading="lazy" />
+                  </div>
+                  <div className="p-3">
+                    <p className="text-sm font-medium text-[var(--signal-ink)]">{card.label}</p>
+                    <p className="text-xs text-[var(--signal-ink-muted)] mt-0.5">{card.subtitle}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIntegrationsModal(card.key)
+                          if (artistId) {
+                            supabase
+                              .from('integrations')
+                              .upsert(
+                                {
+                                  artist_id: artistId,
+                                  service_name: card.key,
+                                  api_key: 'placeholder',
+                                  updated_at: new Date().toISOString(),
+                                },
+                                { onConflict: 'artist_id,service_name' }
+                              )
+                              .then(() => {})
+                          }
+                        }}
+                        className="text-xs text-[var(--signal-ink)] hover:text-[var(--signal-gold)]"
+                      >
+                        Connect
+                      </button>
+                      <button
+                        type="button"
+                        disabled={syncLoading === card.key}
+                        onClick={async () => {
+                          if (!artistId) return
+                          setSyncLoading(card.key)
+                          const session = await getSession()
+                          if (!session) {
+                            setSyncLoading(null)
+                            return
+                          }
+                          await fetch(apiUrl('/sync'), {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: `Bearer ${session.access_token}`,
+                            },
+                            body: JSON.stringify({ artist_id: artistId, service: card.key }),
+                          })
+                          setSyncLoading(null)
+                        }}
+                        className="text-xs text-[var(--signal-gold)] hover:opacity-80 disabled:opacity-50"
+                      >
+                        {syncLoading === card.key ? 'Syncing…' : 'Sync'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {integrationsModal && (
+              <div className="mt-4 p-4 rounded-[var(--radius-md)] bg-[var(--signal-silver-light)]/30 text-sm text-[var(--signal-ink-muted)]">
+                <p>Connect your store — we’ll pull your catalogue. Add API keys in settings or use Sync after connecting.</p>
+                <button type="button" onClick={() => setIntegrationsModal(null)} className="mt-2 text-[var(--signal-gold)] hover:opacity-80">
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
       </div>
     </div>
   )

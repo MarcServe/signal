@@ -12,7 +12,7 @@ type ArtistState = {
 } | null
 
 type Product = { id: string; title: string; image_url: string | null; type: string }
-type Membership = { id: string; title: string; price_cents: number }
+type Membership = { id: string; title: string; price_cents: number; image_url: string | null }
 
 export function ArtistProfile() {
   const { artistId } = useParams<{ artistId: string }>()
@@ -44,7 +44,9 @@ export function ArtistProfile() {
         })
         setEvents(profile.events as { id: string; title: string; image_url: string | null; starts_at: string }[])
         setProducts(profile.products as { id: string; title: string; image_url: string | null; type: string }[])
-        setMemberships(profile.memberships as { id: string; title: string; price_cents: number }[])
+        setMemberships(
+          profile.memberships as { id: string; title: string; price_cents: number; image_url: string | null }[]
+        )
       } else if (demo) {
         setArtist({
           display_name: demo.title,
@@ -96,7 +98,7 @@ export function ArtistProfile() {
 
     supabase
       .from('memberships')
-      .select('id, title, price_cents')
+      .select('id, title, price_cents, image_url')
       .eq('artist_id', artistId)
       .then(({ data }) => setMemberships((data ?? []) as Membership[]))
   }, [artistId, isDemo])
@@ -197,7 +199,13 @@ export function ArtistProfile() {
       {/* Join membership modal */}
       {joinMembership && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setJoinMembership(null)}>
-          <div className="bg-[var(--signal-white-pure)] rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[var(--signal-white-pure)] rounded-2xl overflow-hidden max-w-sm w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {joinMembership.image_url && (
+              <div className="aspect-[16/9] bg-[var(--signal-silver-light)]">
+                <img src={joinMembership.image_url} alt="" className="h-full w-full object-cover" />
+              </div>
+            )}
+            <div className="p-6">
             <h3 className="text-lg font-semibold text-[var(--signal-ink)] mb-2" style={{ fontFamily: 'var(--font-display)' }}>{joinMembership.title}</h3>
             <p className="text-sm text-[var(--signal-ink-muted)] mb-4">${(joinMembership.price_cents / 100).toFixed(2)}/month</p>
             <div className="flex gap-2">
@@ -209,6 +217,7 @@ export function ArtistProfile() {
                 Join (mock)
               </button>
               <button type="button" onClick={() => setJoinMembership(null)} className="flex-1 py-2 text-sm text-[var(--signal-ink-muted)]">Cancel</button>
+            </div>
             </div>
           </div>
         </div>
@@ -288,13 +297,22 @@ export function ArtistProfile() {
                   key={m.id}
                   type="button"
                   onClick={() => setJoinMembership(m)}
-                  className="rounded-[var(--radius-card)] border border-[var(--signal-gold)]/30 bg-[var(--signal-white-pure)] px-4 py-3 min-w-[180px] text-left hover:border-[var(--signal-gold)]/60 hover:bg-[var(--signal-silver-light)]/30 transition-colors"
+                  className="rounded-[var(--radius-card)] border border-[var(--signal-gold)]/30 bg-[var(--signal-white-pure)] min-w-[160px] max-w-[220px] text-left overflow-hidden hover:border-[var(--signal-gold)]/60 hover:bg-[var(--signal-silver-light)]/30 transition-colors"
                 >
-                  <p className="font-medium text-[var(--signal-ink)]">{m.title}</p>
-                  <p className="text-sm text-[var(--signal-gold)] mt-0.5">
-                    ${(m.price_cents / 100).toFixed(2)}/mo
-                  </p>
-                  <span className="text-xs text-[var(--signal-ink-muted)] mt-1 block">Tap to join</span>
+                  <div className="aspect-[4/3] bg-[var(--signal-silver-light)]/50">
+                    {m.image_url ? (
+                      <img src={m.image_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center px-2">
+                        <span className="text-xs text-[var(--signal-ink-muted)] text-center">{m.title}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-3 py-2.5">
+                    <p className="font-medium text-[var(--signal-ink)] text-sm truncate">{m.title}</p>
+                    <p className="text-sm text-[var(--signal-gold)] mt-0.5">${(m.price_cents / 100).toFixed(2)}/mo</p>
+                    <span className="text-xs text-[var(--signal-ink-muted)] mt-1 block">Tap to join</span>
+                  </div>
                 </button>
               ))}
             </div>

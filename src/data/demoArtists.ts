@@ -18,6 +18,8 @@ export interface DemoMembership {
   id: string
   title: string
   price_cents: number
+  /** Optional tier card image (matches DB `memberships.image_url`). */
+  image_url?: string | null
 }
 
 export interface DemoArtistProfile {
@@ -55,8 +57,8 @@ After a quieter period focused on personal development and coaching, he returned
       { id: 'demo-p1-b', title: 'DJ KRUST Logo Cap', image_url: card(1), type: 'merch' },
     ],
     memberships: [
-      { id: 'demo-m1-a', title: 'Inner Circle', price_cents: 999 },
-      { id: 'demo-m1-b', title: 'VIP Access', price_cents: 1999 },
+      { id: 'demo-m1-a', title: 'Inner Circle', price_cents: 999, image_url: card(1) },
+      { id: 'demo-m1-b', title: 'VIP Access', price_cents: 1999, image_url: card(2) },
     ],
   },
   'demo-artist-2': {

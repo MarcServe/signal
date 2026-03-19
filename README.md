@@ -116,14 +116,14 @@ Serverless routes in `api/` are ready for production. Set the env vars in `.env.
 | `/api/stripe-checkout` | POST | Create Stripe Checkout Session (purchase or subscription) |
 | `/api/stripe-webhook` | POST | Stripe webhook (configure in Stripe Dashboard) |
 | `/api/avatar-generate` | POST | Store avatar; `mode: "enhance"` + `provider: "gemini"` uses **Gemini** native image (set `GEMINI_API_KEY`; optional `GEMINI_IMAGE_MODEL`) |
-| `/api/product-image-generate` | POST | Body `{ "product_id", "artist_id" }` — **Gemini** text-to-image cover, uploads to Storage (`avatars` bucket `product-covers/…`), updates `products.image_url` |
+| `/api/product-image-generate` | POST | Catalog images (one target only): `{ "artist_id", "product_id" \| "membership_id" \| "event_id", "creative_prompt"?: "…" }` generates with Gemini; add `"source_image_url"` to **clean / standardize** an uploaded photo (optional `creative_prompt` as extra notes). Updates `products`, `memberships`, or `events.image_url`. Storage: `product-covers/`, `membership-covers/`, `event-covers/` (and client uploads under `product-covers/…`, `membership-uploads/…`, `event-uploads/…`). |
 | `/api/artist-bio` | POST | Body `{ "action": "research", "query": "…" }` (Perplexity / Wikipedia) or `{ "action": "polish", "draft": "…", "display_name"?: "…" }` (Gemini). Requires `Authorization: Bearer` (Supabase JWT). Env: `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, optional `GEMINI_TEXT_MODEL`. |
 | `/api/avatar-tts` | POST | TTS for avatar (ElevenLabs when key set) |
 | `/api/sync` | GET | Health: `{ ok: true, service: "signal-api" }` |
 | `/api/sync` | POST | Sync catalogue from Bandcamp / Apple Music / Shopify |
 | `/api/payouts-run` | POST | Cron: run artist payouts (optional `Authorization: Bearer CRON_SECRET`) |
 
-Run migrations in order: `00001_initial_schema.sql`, `00002_platform_and_integrations.sql`, `00003_grants.sql`, `00004_production_backend.sql`, `00005_integrations_unique.sql`, then `00006_avatars_bucket.sql` (creates the **avatars** storage bucket and policies so profile/avatar uploads work), then **`00007_profile_visible.sql`** (online/offline profile visibility + stricter public read policies).
+Run migrations in order: `00001_initial_schema.sql`, `00002_platform_and_integrations.sql`, `00003_grants.sql`, `00004_production_backend.sql`, `00005_integrations_unique.sql`, then `00006_avatars_bucket.sql` (creates the **avatars** storage bucket and policies so profile/avatar uploads work), then **`00007_profile_visible.sql`** (online/offline profile visibility + stricter public read policies), then **`00008_membership_image_url.sql`** (optional image per membership tier).
 
 ## Live streaming (RTMP server)
 
