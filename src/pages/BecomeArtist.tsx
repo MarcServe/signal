@@ -106,7 +106,7 @@ export function BecomeArtist() {
           <div>
             <label className="block text-xs font-medium text-[var(--signal-ink-muted)] mb-1.5">About (optional)</label>
             <p className="text-[11px] text-[var(--signal-ink-muted)] mb-1.5 leading-snug">
-              Jot rough notes — <span className="text-[var(--signal-ink)]">Refine</span> cleans it up (Gemini).{' '}
+              Jot rough notes — <span className="text-[var(--signal-ink)]">Refine</span> cleans it up with AI.{' '}
               <span className="text-[var(--signal-ink)]">Web</span> only if you’re already listed online.
             </p>
             {bioNotice && <p className="text-xs text-[var(--signal-ink-muted)] mb-1">{bioNotice}</p>}
@@ -155,7 +155,7 @@ export function BecomeArtist() {
                   }
                   if (r.summary) {
                     setBio(r.summary)
-                    setBioNotice(`From ${r.source === 'perplexity' ? 'Perplexity' : 'Wikipedia'} — edit before continuing.`)
+                    setBioNotice(`From ${r.source === 'perplexity' ? 'web sources' : 'public records'} — edit before continuing.`)
                   } else {
                     const hint = r.source === 'none' ? r.message : undefined
                     setBioNotice(hint ?? 'No match. Use Refine or write your own.')

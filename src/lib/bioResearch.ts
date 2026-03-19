@@ -5,7 +5,7 @@ export type BioResearchResult =
   | { ok: true; summary: null; source: 'none'; message?: string }
   | { ok: false; error: string }
 
-/** Calls POST /api/artist-bio with action research (Perplexity if configured, else Wikipedia). */
+/** Calls POST /api/artist-bio with action research (web sources when configured). */
 export async function fetchArtistBioFromWeb(query: string): Promise<BioResearchResult> {
   const q = query.trim()
   if (!q) return { ok: false, error: 'Enter a name to look up.' }
@@ -34,13 +34,13 @@ export async function fetchArtistBioFromWeb(query: string): Promise<BioResearchR
     }
     return { ok: true, summary: null, source: 'none', message: data.message }
   } catch {
-    return { ok: false, error: 'Could not reach the research API. Run the API server (e.g. vercel dev) or try again.' }
+    return { ok: false, error: 'Could not reach the research service. Try again in a moment.' }
   }
 }
 
 export type BioPolishResult = { ok: true; text: string } | { ok: false; error: string }
 
-/** Refines the artist's draft with Gemini only — no web lookup (works without Wikipedia / press). */
+/** Refines the artist's draft with AI — no web lookup. */
 export async function polishArtistBioDraft(draft: string, displayName?: string): Promise<BioPolishResult> {
   const d = draft.trim()
   if (d.length < 8) return { ok: false, error: 'Write a few words first — rough notes are fine.' }
@@ -68,6 +68,6 @@ export async function polishArtistBioDraft(draft: string, displayName?: string):
     }
     return { ok: true, text: data.text.trim() }
   } catch {
-    return { ok: false, error: 'Could not reach the API. Run vercel dev + vite, or try again.' }
+    return { ok: false, error: 'Could not reach the writing assistant. Try again in a moment.' }
   }
 }

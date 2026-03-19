@@ -139,7 +139,7 @@ export default async function handler(
 
   const geminiKey = process.env.GEMINI_API_KEY
   if (!geminiKey?.trim()) {
-    res.status(400).json({ error: 'GEMINI_API_KEY is not configured on the server.' })
+    res.status(400).json({ error: 'Image generation is not configured on the server yet.' })
     return
   }
 

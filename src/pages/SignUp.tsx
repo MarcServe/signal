@@ -31,7 +31,7 @@ export function SignUp() {
     if (error) {
       const text =
         error.message === 'Failed to fetch'
-          ? 'Cannot reach Supabase. Check your .env (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) and restart the dev server.'
+          ? 'Cannot reach the account service. Check your connection and configuration, then try again.'
           : error.message
       setMessage({ type: 'error', text })
       return

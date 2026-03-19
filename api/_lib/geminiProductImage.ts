@@ -206,7 +206,7 @@ ${params.userInstruction.trim().slice(0, 800)}`
 
   const extracted = parseGeminiImageResponse(json)
   if (!extracted) {
-    throw new Error('Gemini did not return an image. Try another photo or a different model (GEMINI_IMAGE_MODEL).')
+    throw new Error('The image service did not return an image. Try another photo or a simpler description.')
   }
 
   return extracted

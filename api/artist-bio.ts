@@ -132,7 +132,7 @@ async function handleResearch(
       summary: null,
       source: 'none',
       message:
-        'No summary found. Add PERPLEXITY_API_KEY on the server for richer web results, or try a different spelling.',
+        'No summary found. Try a different spelling, or ask your admin to enable web research for bios.',
     })
     return
   }
@@ -157,7 +157,7 @@ async function handlePolish(
   const key = process.env.GEMINI_API_KEY
   if (!key?.trim()) {
     res.status(503).json({
-      error: 'GEMINI_API_KEY is not set on the server. Add it to .env for refine.',
+      error: 'The writing assistant is not available on the server yet.',
     })
     return
   }
@@ -201,7 +201,7 @@ Rules:
     }
     if (!gRes.ok) {
       res.status(502).json({
-        error: gJson.error?.message ?? `Gemini request failed (${gRes.status})`,
+        error: gJson.error?.message ?? `Writing assistant request failed (${gRes.status})`,
       })
       return
     }
@@ -210,7 +210,7 @@ Rules:
       res.status(502).json({ error: 'No usable text returned. Try again or edit manually.' })
       return
     }
-    res.status(200).json({ text: text.slice(0, 2000), source: 'gemini' })
+    res.status(200).json({ text: text.slice(0, 2000), source: 'assistant' })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Polish failed'
     res.status(502).json({ error: msg })

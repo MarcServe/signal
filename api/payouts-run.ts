@@ -23,7 +23,7 @@ export default async function handler(
     return
   }
   if (!stripe || !supabaseAdmin) {
-    res.status(503).json({ error: 'Stripe or DB not configured' })
+    res.status(503).json({ error: 'Payouts or database not configured' })
     return
   }
   const { data: settings } = await supabaseAdmin.from('platform_settings').select('payout_schedule, payout_minimum_cents').limit(1).single()

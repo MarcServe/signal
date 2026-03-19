@@ -43,7 +43,7 @@ export default async function handler(req: { method?: string; body?: { artist_id
     return
   }
   if (!stripe) {
-    res.status(503).json({ error: 'Stripe not configured. Set STRIPE_SECRET_KEY.' })
+    res.status(503).json({ error: 'Card payouts are not configured on the server yet.' })
     return
   }
   if (!supabaseAdmin) {

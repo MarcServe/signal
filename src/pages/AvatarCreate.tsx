@@ -122,7 +122,7 @@ export function AvatarCreate() {
           import.meta.env.DEV &&
           (!jsonLike || apiRes.status === 404 || apiRes.status === 405)
         ) {
-          // Plain `vite` has no `/api/*`; deploy or run `vercel dev` for serverless routes.
+          // Frontend-only dev server may lack app API routes; use full-stack dev or deployed app.
           savedImageUrl = imageUrl
           serverAvatarSynced = false
         } else {
@@ -134,7 +134,7 @@ export function AvatarCreate() {
           savedImageUrl = imageUrl
           serverAvatarSynced = false
         } else {
-          setMessage({ type: 'error', text: 'Cannot reach API. Check your connection or try again.' })
+          setMessage({ type: 'error', text: 'Can’t reach our servers. Check your connection and try again.' })
           return
         }
       }
@@ -156,7 +156,7 @@ export function AvatarCreate() {
         type: 'success',
         text: serverAvatarSynced
           ? 'Saved.'
-          : 'Saved. If refine is unavailable locally, run the API server alongside Vite.',
+          : 'Saved. Some polish steps need the live app backend — they’ll work automatically when you’re on the deployed app.',
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unexpected upload error.'
@@ -219,7 +219,9 @@ export function AvatarCreate() {
       } catch {
         setMessage({
           type: 'error',
-          text: 'Can’t reach the API. Vite proxies /api to port 3000 — open a second terminal and run npm run dev:vercel, leave npm run dev on :5173, then try again.',
+          text: import.meta.env.DEV
+            ? 'Can’t reach the local backend. Use your project’s full-stack dev command so app APIs are running, then try again.'
+            : 'Can’t reach our servers right now. Try again in a moment.',
         })
         return
       }
@@ -234,13 +236,15 @@ export function AvatarCreate() {
         if (apiRes.status === 502 || apiRes.status === 504) {
           setMessage({
             type: 'error',
-            text: 'API not reachable on port 3000 (Vite proxy failed). Run npm run dev:vercel in another terminal, keep npm run dev on :5173, then try again.',
+            text: import.meta.env.DEV
+              ? 'The local backend isn’t responding. Start your full-stack dev server and try again.'
+              : 'Our service is busy. Try again in a moment.',
           })
           return
         }
         const detail =
-          apiRes.status === 404
-            ? ' The /api route is missing. In a second terminal run: npm run dev:vercel (Vercel serves /api on :3000). Keep npm run dev on :5173 — Vite proxies /api there.'
+          apiRes.status === 404 && import.meta.env.DEV
+            ? ' If you’re developing locally, start the app’s backend/API process and try again.'
             : ''
         const serverMsg = apiJson.error || (raw.trim() ? raw.slice(0, 280) : '') || `HTTP ${apiRes.status}`
         setMessage({
@@ -265,7 +269,9 @@ export function AvatarCreate() {
       setMessage({
         type: 'error',
         text: failedFetch
-          ? 'Can’t reach the API. Run npm run dev:vercel (port 3000) alongside npm run dev (5173).'
+          ? import.meta.env.DEV
+            ? 'Can’t reach the local backend. Start your full-stack dev server and try again.'
+            : 'Can’t reach our servers right now. Try again in a moment.'
           : err instanceof Error
             ? err.message
             : 'Enhance request failed.',
@@ -305,7 +311,7 @@ export function AvatarCreate() {
           {uploading ? 'Uploading…' : 'Choose image'}
         </label>
 
-        {/* Collapsed by default — expand for Gemini refinement */}
+        {/* Collapsed by default — AI portrait refinement */}
         <details className="group/refine mt-6 rounded-2xl border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] overflow-hidden">
           <summary className="cursor-pointer select-none list-none px-4 py-3.5 flex items-center justify-between gap-3 text-sm font-semibold text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden" style={{ fontFamily: 'var(--font-display)' }}>
             <span>Portrait refinement</span>
@@ -316,8 +322,8 @@ export function AvatarCreate() {
           </summary>
           <div className="px-4 pb-4 pt-0 border-t border-[var(--signal-silver-light)]/70">
             <p className="pt-3 text-xs text-[var(--signal-ink-muted)] leading-relaxed">
-              Studio-style pass (Gemini). Auto mode always includes gentle skin smoothing. Needs{' '}
-              <code className="text-[10px]">dev:vercel</code> on :3000 and <code className="text-[10px]">GEMINI_API_KEY</code>.
+              Studio-style pass using Signal’s image tools. Auto mode always includes gentle skin smoothing. On the live site
+              this runs automatically; in local development it needs the app backend running.
             </p>
             <div className="mt-4 flex rounded-xl border border-[var(--signal-silver-light)] overflow-hidden p-0.5 bg-[var(--signal-silver-light)]/20">
               <button

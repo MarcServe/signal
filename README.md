@@ -101,7 +101,7 @@ npm run preview
 ## Deploy (Vercel)
 
 - Connect the repo to Vercel.
-- Add env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- Add env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` for **Production** (and Preview if you use it). Vite inlines `VITE_*` at **build** time — if they were missing on the first deploy, add them and **Redeploy** so the discovery feed and auth hit your real Supabase project (otherwise the app falls back to demo cards only).
 - Build command: `npm run build`; output directory: `dist`.
 - The `api/` folder is deployed as serverless functions at `/api/*`. Add `SUPABASE_SERVICE_ROLE_KEY` for any route that writes to the DB.
 - Shared server code lives in `api/_lib/` (leading underscore so Vercel **does not** count those files toward the Hobby serverless function limit — only top-level `api/*.ts` routes count).

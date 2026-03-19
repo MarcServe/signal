@@ -1,8 +1,7 @@
 /**
  * Product posture: minimal, luxury, visual-first.
  *
- * Portrait **AI enhancer** and **web profile summary** (Perplexity / Wikipedia) are always in the UI;
- * they still need the API server and keys where noted.
+ * Portrait AI enhancer and web profile summary are always in the UI; production needs backend support configured.
  *
  * Set `VITE_ENABLE_AI_FEATURES=true` in `.env` to show:
  * - “Suggest name & handle” on Become an artist (local heuristic modal)

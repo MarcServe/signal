@@ -154,12 +154,12 @@ export function Admin() {
             <label className="block text-sm text-[var(--signal-ink-muted)]">Minimum payout (cents)</label>
             <input type="number" min={0} value={payoutMinimum} onChange={(e) => setPayoutMinimum(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-4 py-2 text-sm" />
           </div>
-          <p className="text-xs text-[var(--signal-ink-muted)]">Call POST /api/payouts-run (cron) to run payouts. Set CRON_SECRET in env.</p>
+          <p className="text-xs text-[var(--signal-ink-muted)]">Schedule payout runs from your deployment; server secrets live in environment settings.</p>
         </section>
 
         <section className="mt-10 pt-6 border-t border-[var(--signal-silver-light)]">
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-            Automation (n8n / Make)
+            Automation webhooks
           </h2>
           <input type="url" placeholder="Webhook URL" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-4 py-2 text-sm mb-2" />
           <p className="text-xs text-[var(--signal-ink-muted)]">Events (sale, subscription, stream_started) will POST to this URL.</p>

@@ -75,8 +75,9 @@ export default async function handler(
   if (mode === 'enhance') {
     const providerKeyMissing = selectedProvider === 'gemini' ? !geminiKey : !openaiKey
     if (providerKeyMissing) {
-      const neededVar = selectedProvider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY'
-      res.status(400).json({ error: `Enhance requested but ${neededVar} is not configured.` })
+      res.status(400).json({
+        error: 'Portrait enhancement is not configured on the server yet.',
+      })
       return
     }
   }

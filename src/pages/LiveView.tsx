@@ -441,7 +441,7 @@ export function LiveView() {
         </div>
       )}
 
-      {/* In-stream purchase: CheckoutDrawer (Stripe or mock) */}
+      {/* In-stream purchase: CheckoutDrawer (live or mock) */}
       {stream && (
         <CheckoutDrawer
           open={showPurchaseDrawer}

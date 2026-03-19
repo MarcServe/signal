@@ -1,5 +1,5 @@
 /**
- * Reusable checkout drawer: one-off purchase or subscription. Calls /api/stripe-checkout when Stripe is configured.
+ * Reusable checkout drawer: one-off purchase or subscription; uses card checkout when configured.
  */
 import { useState } from 'react'
 import { apiUrl, getSession } from '../lib/api'
@@ -88,7 +88,7 @@ export function CheckoutDrawer({
           {title}
         </h3>
         <p className="text-sm text-[var(--signal-ink-muted)] mb-4">
-          ${(amountCents / 100).toFixed(2)} — Pay with card via Stripe.
+          ${(amountCents / 100).toFixed(2)} — Pay securely with card.
         </p>
         {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
         <div className="flex gap-2">

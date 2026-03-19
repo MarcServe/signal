@@ -21,7 +21,7 @@ export default async function handler(
     return
   }
   if (!elevenKey) {
-    res.status(501).json({ error: 'ElevenLabs not configured. Set ELEVENLABS_API_KEY.' })
+    res.status(501).json({ error: 'Voice playback is not configured on the server yet.' })
     return
   }
   const voice = voice_id || defaultVoiceId
@@ -41,7 +41,7 @@ export default async function handler(
     })
     if (!response.ok) {
       const err = await response.text()
-      res.status(response.status).json({ error: err || 'ElevenLabs error' })
+      res.status(response.status).json({ error: err || 'Voice service error' })
       return
     }
     const audioBuffer = await response.arrayBuffer()

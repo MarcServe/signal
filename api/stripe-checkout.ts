@@ -49,7 +49,7 @@ export default async function handler(
     return
   }
   if (!stripe || !supabaseAdmin) {
-    res.status(503).json({ error: 'Stripe or database not configured' })
+    res.status(503).json({ error: 'Payments or database not configured' })
     return
   }
 
@@ -58,12 +58,12 @@ export default async function handler(
 
   const { data: artist } = await supabaseAdmin.from('artists').select('id, stripe_account_id, stripe_onboarding_complete').eq('id', artist_id).single()
   if (!artist || !(artist as { stripe_onboarding_complete: boolean }).stripe_onboarding_complete) {
-    res.status(400).json({ error: 'Artist has not completed Stripe Connect onboarding' })
+    res.status(400).json({ error: 'Artist has not completed payout onboarding' })
     return
   }
   const stripeAccountId = (artist as { stripe_account_id: string }).stripe_account_id
   if (!stripeAccountId) {
-    res.status(400).json({ error: 'Artist Stripe account not linked' })
+    res.status(400).json({ error: 'Artist payout account not linked' })
     return
   }
 

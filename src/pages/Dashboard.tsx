@@ -403,8 +403,9 @@ export function Dashboard() {
               About
             </h2>
             <p className="text-xs text-[var(--signal-ink-muted)] mb-3">
-              Public profile only. <span className="text-[var(--signal-ink)]">Refine</span> polishes your notes (Gemini, no web).{' '}
-              <span className="text-[var(--signal-ink)]">Web</span> uses Wikipedia or Perplexity if configured.
+              Public profile only. <span className="text-[var(--signal-ink)]">Refine</span> polishes your notes with built-in
+              AI (no web lookup). <span className="text-[var(--signal-ink)]">Web</span> pulls a short public bio when
+              available.
             </p>
             {bioNotice && (
               <p className={`mb-2 text-sm ${bioNotice.type === 'err' ? 'text-red-600' : 'text-[var(--signal-ink-muted)]'}`} role="status">
@@ -425,7 +426,7 @@ export function Dashboard() {
               <button
                 type="button"
                 disabled={bioPolishLoading || bioResearchLoading}
-                title="Polish your notes with Gemini — no Wikipedia required"
+                title="Polish your notes with AI — no web lookup"
                 onClick={async () => {
                   setBioNotice(null)
                   setBioPolishLoading(true)
@@ -463,7 +464,7 @@ export function Dashboard() {
                     setBioDraft(r.summary)
                     setBioNotice({
                       type: 'ok',
-                      text: `From ${r.source === 'perplexity' ? 'web (Perplexity)' : 'Wikipedia'}. Edit, then save.`,
+                      text: `From ${r.source === 'perplexity' ? 'web sources' : 'public records'}. Edit, then save.`,
                     })
                   } else {
                     const hint = r.source === 'none' ? r.message : undefined
@@ -576,7 +577,7 @@ export function Dashboard() {
           <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Audience & sales</h2>
           <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-6 text-center">
             <p className="text-[var(--signal-ink-muted)] text-sm mb-2">Fan analytics, track sales, and audience data.</p>
-            <p className="text-xs text-[var(--signal-silver)]">Connect Stripe and sync catalogue to see revenue and subscriber counts here.</p>
+            <p className="text-xs text-[var(--signal-silver)]">Connect payouts and sync your catalogue to see revenue and subscriber counts here.</p>
           </div>
         </section>
 
@@ -700,7 +701,7 @@ export function Dashboard() {
                       {ev.venue ? ` · ${ev.venue}` : ''}
                     </p>
                     <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Describe poster / vibe for Gemini (optional)
+                      Describe the look you want (optional)
                     </label>
                     <textarea
                       value={catalogPrompts[`event:${ev.id}`] ?? ''}
@@ -764,7 +765,7 @@ export function Dashboard() {
                             await reloadEvents(artistId)
                             setCatalogImageNotice('Event image generated.')
                           } catch {
-                            setCatalogImageNotice('Could not reach API.')
+                            setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
                           } finally {
                             setCatalogBusy(null)
                           }
@@ -815,7 +816,7 @@ export function Dashboard() {
                               await reloadEvents(artistId)
                               setCatalogImageNotice('Event image cleaned.')
                             } catch {
-                              setCatalogImageNotice('Could not reach API.')
+                              setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
                             } finally {
                               setCatalogBusy(null)
                             }
@@ -941,7 +942,7 @@ export function Dashboard() {
                     <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{m.title}</p>
                     <p className="text-xs text-[var(--signal-gold)]">${(m.price_cents / 100).toFixed(2)}/mo</p>
                     <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Describe for Gemini (optional)
+                      Describe the image you want (optional)
                     </label>
                     <textarea
                       value={catalogPrompts[`membership:${m.id}`] ?? ''}
@@ -1005,7 +1006,7 @@ export function Dashboard() {
                             await reloadMemberships(artistId)
                             setCatalogImageNotice('Tier image generated.')
                           } catch {
-                            setCatalogImageNotice('Could not reach API.')
+                            setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
                           } finally {
                             setCatalogBusy(null)
                           }
@@ -1056,7 +1057,7 @@ export function Dashboard() {
                               await reloadMemberships(artistId)
                               setCatalogImageNotice('Tier image cleaned.')
                             } catch {
-                              setCatalogImageNotice('Could not reach API.')
+                              setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
                             } finally {
                               setCatalogBusy(null)
                             }
@@ -1205,7 +1206,7 @@ export function Dashboard() {
                       {p.title}
                     </p>
                     <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Describe for Gemini (optional)
+                      Describe the image you want (optional)
                     </label>
                     <textarea
                       value={catalogPrompts[`product:${p.id}`] ?? ''}
@@ -1269,7 +1270,7 @@ export function Dashboard() {
                             await reloadProducts(artistId)
                             setCatalogImageNotice('Image generated from your description.')
                           } catch {
-                            setCatalogImageNotice('Could not reach API. Run npm run dev:vercel alongside Vite.')
+                            setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
                           } finally {
                             setCatalogBusy(null)
                           }
@@ -1320,7 +1321,7 @@ export function Dashboard() {
                               await reloadProducts(artistId)
                               setCatalogImageNotice('Photo cleaned and standardized.')
                             } catch {
-                              setCatalogImageNotice('Could not reach API.')
+                              setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
                             } finally {
                               setCatalogBusy(null)
                             }
@@ -1369,10 +1370,10 @@ export function Dashboard() {
                         "linear-gradient(135deg, rgba(99,91,255,0.16), rgba(99,91,255,0.04)), radial-gradient(circle at 80% 20%, rgba(99,91,255,0.35), transparent 55%)",
                     }}
                   >
-                    <img src="https://cdn.simpleicons.org/stripe/635BFF" alt="Stripe logo" className="w-9 h-9 object-contain" loading="lazy" />
+                    <img src="https://cdn.simpleicons.org/stripe/635BFF" alt="" className="w-9 h-9 object-contain opacity-90" loading="lazy" />
                   </div>
                   <div className="p-3">
-                    <p className="text-sm font-medium text-[var(--signal-ink)]">Stripe</p>
+                    <p className="text-sm font-medium text-[var(--signal-ink)]">Card payouts</p>
                     <p className="text-xs text-[var(--signal-ink-muted)] mt-1">Artist payouts and settlement</p>
                     <button
                       type="button"

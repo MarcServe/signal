@@ -34,7 +34,7 @@ export function SettingsPrivacy() {
           setArtistId(null)
           const hint =
             error.message?.includes('profile_visible') || (error as { code?: string }).code === '42703'
-              ? ' Run supabase/migrations/00007_profile_visible.sql in the Supabase SQL Editor, then refresh.'
+              ? ' Your project may need a database update for online/offline visibility — contact support or your admin, then refresh.'
               : ''
           setFetchError(`${error.message}${hint}`)
           return

@@ -164,7 +164,7 @@ export async function enhancePortraitWithGemini(params: {
 
   const extracted = getInlineImageFromResponse(json)
   if (!extracted) {
-    throw new Error('Gemini did not return an image. Try a different photo or model (GEMINI_IMAGE_MODEL).')
+    throw new Error('The image service did not return an image. Try a different photo or a simpler look.')
   }
 
   return extracted
