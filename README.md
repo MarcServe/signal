@@ -104,6 +104,7 @@ npm run preview
 - Add env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 - Build command: `npm run build`; output directory: `dist`.
 - The `api/` folder is deployed as serverless functions at `/api/*`. Add `SUPABASE_SERVICE_ROLE_KEY` for any route that writes to the DB.
+- Shared server code lives in `api/_lib/` (leading underscore so Vercel **does not** count those files toward the Hobby serverless function limit — only top-level `api/*.ts` routes count).
 
 ## API (production)
 

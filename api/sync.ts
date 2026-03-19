@@ -4,7 +4,7 @@
  * Body: { artist_id, service: 'bandcamp'|'apple_music'|'shopify' }
  * Headers: Authorization: Bearer <jwt>
  */
-import { supabaseAdmin } from './lib/supabase.js'
+import { supabaseAdmin } from './_lib/supabase.js'
 
 function getAuthHeader(req: { headers?: { authorization?: string } }): string | null {
   const auth = req.headers?.authorization

@@ -5,11 +5,11 @@
  * Headers: Authorization: Bearer <jwt>
  */
 import { randomUUID } from 'node:crypto'
-import { supabaseAdmin } from './lib/supabase.js'
+import { supabaseAdmin } from './_lib/supabase.js'
 import {
   DEFAULT_GEMINI_IMAGE_MODEL,
   enhancePortraitWithGemini,
-} from './lib/geminiAvatar.js'
+} from './_lib/geminiAvatar.js'
 
 const openaiKey = process.env.OPENAI_API_KEY
 const geminiKey = process.env.GEMINI_API_KEY

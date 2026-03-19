@@ -4,8 +4,8 @@
  * Requires GEMINI_API_KEY, SUPABASE_SERVICE_ROLE_KEY, bucket "avatars" (path product-covers/…)
  */
 import { randomUUID } from 'node:crypto'
-import { supabaseAdmin } from './lib/supabase.js'
-import { generateProductCoverWithGemini } from './lib/geminiProductImage.js'
+import { supabaseAdmin } from './_lib/supabase.js'
+import { generateProductCoverWithGemini } from './_lib/geminiProductImage.js'
 
 function getAuthHeader(req: { headers?: { authorization?: string } }): string | null {
   const auth = req.headers?.authorization

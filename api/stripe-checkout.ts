@@ -6,7 +6,7 @@
  * Returns: { url } to redirect to Stripe Checkout.
  */
 import Stripe from 'stripe'
-import { supabaseAdmin } from './lib/supabase.js'
+import { supabaseAdmin } from './_lib/supabase.js'
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-02-24.acacia' }) : null
 const appUrl = process.env.VITE_APP_URL || process.env.APP_URL || 'http://localhost:5173'
