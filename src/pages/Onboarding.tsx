@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth, type UserProfile } from '../contexts/AuthContext'
 
 export function Onboarding() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
@@ -33,8 +33,9 @@ export function Onboarding() {
       }
       artistId = insertedArtist?.id ?? artistId
     }
-    const refreshedProfile = await refreshProfile()
-    const goToDashboard = (refreshedProfile?.role ?? profile?.role) !== 'fan' || !!artistId
+    const refreshedProfile: UserProfile | null = await refreshProfile()
+    const roleAfterRefresh = refreshedProfile?.role ?? profile?.role ?? 'fan'
+    const goToDashboard = roleAfterRefresh !== 'fan' || !!artistId
     navigate(goToDashboard ? '/dashboard' : '/', { replace: true })
   }
 
@@ -134,10 +135,10 @@ export function Onboarding() {
     <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)] px-4">
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-semibold text-[var(--signal-ink)] mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-          Create your avatar
+          Portrait
         </h1>
-        <p className="text-sm text-[var(--signal-ink-muted)] mb-6">
-          Upload a photo for your avatar, or skip for now. You can add one later.
+        <p className="text-sm text-[var(--signal-ink-muted)] mb-6 leading-relaxed">
+          Add a photo for your profile, or continue and add one later from the dashboard.
         </p>
         <div className="space-y-3">
           <label className="block w-full py-8 border-2 border-dashed border-[var(--signal-silver-light)] rounded-xl text-center text-[var(--signal-ink-muted)] cursor-pointer hover:border-[var(--signal-gold)] hover:text-[var(--signal-gold)]">

@@ -9,7 +9,7 @@ import {
 import { supabase } from '../lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
-interface UserProfile {
+export interface UserProfile {
   id: string
   email: string | null
   full_name: string | null
@@ -23,7 +23,7 @@ interface AuthState {
   profile: UserProfile | null
   loading: boolean
   signOut: () => Promise<void>
-  refreshProfile: () => Promise<void>
+  refreshProfile: () => Promise<UserProfile | null>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -118,13 +118,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null)
   }, [])
 
-  return (
-    <AuthContext.Provider
-      value={{ user, profile, loading, signOut, refreshProfile }}
-    >
-      {children}
-    </AuthContext.Provider>
-  )
+  const authValue: AuthState = {
+    user,
+    profile,
+    loading,
+    signOut,
+    refreshProfile,
+  }
+
+  return <AuthContext.Provider value={authValue}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
