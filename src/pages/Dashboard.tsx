@@ -117,6 +117,9 @@ export function Dashboard() {
   const [productFormError, setProductFormError] = useState<string | null>(null)
   const [payoutsSectionOpen, setPayoutsSectionOpen] = useState(true)
   const [musicSectionOpen, setMusicSectionOpen] = useState(true)
+  const [backfillBusy, setBackfillBusy] = useState(false)
+  const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null)
+  const [backfillNotice, setBackfillNotice] = useState<string | null>(null)
 
   const refreshStreams = useCallback(async (aid: string) => {
     const { data: s } = await supabase
@@ -144,6 +147,139 @@ export function Dashboard() {
   const reloadProducts = async (id: string) => {
     const { data } = await supabase.from('products').select('id, title, image_url').eq('artist_id', id).limit(40)
     setProducts((data ?? []) as typeof products)
+  }
+
+  /**
+   * Backfill missing catalog hero images for this artist.
+   * Targets rows where `image_url` is null/empty so the UI doesn't fall back to artist portrait.
+   */
+  const backfillMissingCatalogImages = async (aid: string) => {
+    setBackfillNotice(null)
+    setBackfillProgress(null)
+    setBackfillBusy(true)
+    try {
+      const session = await getSession()
+      if (!session) {
+        setBackfillNotice('Sign in again to generate images.')
+        return
+      }
+
+      // Cap work to keep cost/time bounded. Tune as you like.
+      const MAX_TOTAL = 18
+      const MAX_PER_KIND = 10
+
+      setBackfillNotice('Scanning catalog for missing images…')
+
+      const [prodRes, memRes, evRes] = await Promise.all([
+        supabase
+          .from('products')
+          .select('id, title, type, image_url')
+          .eq('artist_id', aid)
+          .order('created_at', { ascending: false })
+          .limit(60),
+        supabase
+          .from('memberships')
+          .select('id, title, image_url')
+          .eq('artist_id', aid)
+          .order('created_at', { ascending: false })
+          .limit(60),
+        supabase
+          .from('events')
+          .select('id, title, image_url')
+          .eq('artist_id', aid)
+          .order('starts_at', { ascending: false })
+          .limit(60),
+      ])
+
+      const products = (prodRes.data ?? []) as { id: string; title: string; type: string; image_url: string | null }[]
+      const memberships = (memRes.data ?? []) as { id: string; title: string; image_url: string | null }[]
+      const events = (evRes.data ?? []) as { id: string; title: string; image_url: string | null }[]
+
+      const tasks: Array<{ kind: CatalogKind; id: string; title: string; creative_prompt?: string }> = []
+
+      for (const p of products) {
+        const hasImg = typeof p.image_url === 'string' && p.image_url.trim().length > 0
+        if (!hasImg) {
+          tasks.push({
+            kind: 'product',
+            id: p.id,
+            title: p.title,
+            creative_prompt: `Create a ${p.type} catalog hero image for "${p.title}". Luxury minimal. No text/logos/watermarks.`,
+          })
+        }
+        if (tasks.filter((t) => t.kind === 'product').length >= MAX_PER_KIND) break
+      }
+
+      for (const m of memberships) {
+        const hasImg = typeof m.image_url === 'string' && m.image_url.trim().length > 0
+        if (!hasImg) {
+          tasks.push({
+            kind: 'membership',
+            id: m.id,
+            title: m.title,
+            creative_prompt: `Create a membership tier card for "${m.title}". Luxury minimal. No text/logos/watermarks.`,
+          })
+        }
+        if (tasks.filter((t) => t.kind === 'membership').length >= MAX_PER_KIND) break
+      }
+
+      for (const e of events) {
+        const hasImg = typeof e.image_url === 'string' && e.image_url.trim().length > 0
+        if (!hasImg) {
+          tasks.push({
+            kind: 'event',
+            id: e.id,
+            title: e.title,
+            creative_prompt: `Create a wide event banner for "${e.title}". Luxury concert flyer mood. No text/logos/watermarks.`,
+          })
+        }
+        if (tasks.filter((t) => t.kind === 'event').length >= MAX_PER_KIND) break
+      }
+
+      const sliced = tasks.slice(0, MAX_TOTAL)
+      if (sliced.length === 0) {
+        setBackfillNotice('Nothing to backfill — all catalog items already have images.')
+        return
+      }
+
+      setBackfillProgress({ done: 0, total: sliced.length })
+      setBackfillNotice(`Generating ${sliced.length} missing images…`)
+
+      for (let i = 0; i < sliced.length; i++) {
+        const t = sliced[i]
+        setBackfillNotice(`Generating ${i + 1}/${sliced.length}: ${t.title}`)
+
+        const res = await fetch(apiUrl('/product-image-generate'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(
+            catalogImagePayload(aid, t.kind, t.id, {
+              creative_prompt: t.creative_prompt,
+            })
+          ),
+        })
+
+        // Keep going even if a single item fails; user still gets progress + best-effort backfill.
+        if (!res.ok) {
+          const raw = await res.text().catch(() => '')
+          setBackfillNotice(`Some images failed. Last error: ${raw.slice(0, 120) || `HTTP ${res.status}`}`)
+        }
+
+        setBackfillProgress((p) => (p ? { ...p, done: i + 1 } : { done: i + 1, total: sliced.length }))
+      }
+
+      setBackfillNotice('Backfill complete. Reloading images…')
+      await Promise.all([reloadProducts(aid), reloadMemberships(aid), reloadEvents(aid)])
+      setBackfillNotice('Backfill complete.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Backfill failed.'
+      setBackfillNotice(msg)
+    } finally {
+      setBackfillBusy(false)
+    }
   }
 
   const handleStripeConnect = async () => {
@@ -1442,7 +1578,33 @@ export function Dashboard() {
 
         {/* Products: visual cards + Add product */}
         <section className="mb-[var(--space-2xl)]">
-          <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Products</h2>
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h2 className="text-lg font-medium text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-display)' }}>Products</h2>
+            <button
+              type="button"
+              disabled={!artistId || backfillBusy}
+              onClick={() => {
+                if (!artistId) return
+                void backfillMissingCatalogImages(artistId)
+              }}
+              className="px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {backfillBusy ? 'Backfilling…' : 'Backfill missing covers'}
+            </button>
+          </div>
+          <p className="text-xs text-[var(--signal-ink-muted)] -mt-2 mb-4" style={{ fontFamily: 'var(--font-body)' }}>
+            Generates missing track/merch/product, membership tier, and event images (best-effort). Limited to reduce cost.
+          </p>
+          {backfillProgress && (
+            <p className="text-xs text-[var(--signal-ink-muted)] mb-3" style={{ fontFamily: 'var(--font-body)' }}>
+              {backfillProgress.done}/{backfillProgress.total} done
+            </p>
+          )}
+          {backfillNotice && (
+            <p className="text-sm text-[var(--signal-ink-muted)] mb-3" style={{ fontFamily: 'var(--font-body)' }}>
+              {backfillNotice}
+            </p>
+          )}
           <input
             ref={catalogFileRef}
             type="file"
