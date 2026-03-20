@@ -200,11 +200,14 @@ export function Dashboard() {
       for (const p of products) {
         const hasImg = typeof p.image_url === 'string' && p.image_url.trim().length > 0
         if (!hasImg) {
+          const prompt = catalogPrompts[`product:${p.id}`]?.trim()
           tasks.push({
             kind: 'product',
             id: p.id,
             title: p.title,
-            creative_prompt: `Create a ${p.type} catalog hero image for "${p.title}". Luxury minimal. No text/logos/watermarks.`,
+            creative_prompt: prompt
+              ? prompt
+              : `Create a ${p.type} catalog hero image for "${p.title}". Luxury minimal. No text/logos/watermarks.`,
           })
         }
         if (tasks.filter((t) => t.kind === 'product').length >= MAX_PER_KIND) break
@@ -213,11 +216,14 @@ export function Dashboard() {
       for (const m of memberships) {
         const hasImg = typeof m.image_url === 'string' && m.image_url.trim().length > 0
         if (!hasImg) {
+          const prompt = catalogPrompts[`membership:${m.id}`]?.trim()
           tasks.push({
             kind: 'membership',
             id: m.id,
             title: m.title,
-            creative_prompt: `Create a membership tier card for "${m.title}". Luxury minimal. No text/logos/watermarks.`,
+            creative_prompt: prompt
+              ? prompt
+              : `Create a membership tier card for "${m.title}". Luxury minimal. No text/logos/watermarks.`,
           })
         }
         if (tasks.filter((t) => t.kind === 'membership').length >= MAX_PER_KIND) break
@@ -226,11 +232,14 @@ export function Dashboard() {
       for (const e of events) {
         const hasImg = typeof e.image_url === 'string' && e.image_url.trim().length > 0
         if (!hasImg) {
+          const prompt = catalogPrompts[`event:${e.id}`]?.trim()
           tasks.push({
             kind: 'event',
             id: e.id,
             title: e.title,
-            creative_prompt: `Create a wide event banner for "${e.title}". Luxury concert flyer mood. No text/logos/watermarks.`,
+            creative_prompt: prompt
+              ? prompt
+              : `Create a wide event banner for "${e.title}". Luxury concert flyer mood. No text/logos/watermarks.`,
           })
         }
         if (tasks.filter((t) => t.kind === 'event').length >= MAX_PER_KIND) break
@@ -245,6 +254,8 @@ export function Dashboard() {
       setBackfillProgress({ done: 0, total: sliced.length })
       setBackfillNotice(`Generating ${sliced.length} missing images…`)
 
+      let failed = 0
+      let lastError = ''
       for (let i = 0; i < sliced.length; i++) {
         const t = sliced[i]
         setBackfillNotice(`Generating ${i + 1}/${sliced.length}: ${t.title}`)
@@ -265,7 +276,16 @@ export function Dashboard() {
         // Keep going even if a single item fails; user still gets progress + best-effort backfill.
         if (!res.ok) {
           const raw = await res.text().catch(() => '')
-          setBackfillNotice(`Some images failed. Last error: ${raw.slice(0, 120) || `HTTP ${res.status}`}`)
+          let body: { error?: string } = {}
+          try {
+            if (raw.trim()) body = JSON.parse(raw) as typeof body
+          } catch {
+            /* ignore */
+          }
+          const msg = body.error || raw.slice(0, 200) || `HTTP ${res.status}`
+          failed += 1
+          lastError = msg
+          setBackfillNotice(`Some images failed. Last error: ${msg.slice(0, 120)}`)
         }
 
         setBackfillProgress((p) => (p ? { ...p, done: i + 1 } : { done: i + 1, total: sliced.length }))
@@ -273,7 +293,7 @@ export function Dashboard() {
 
       setBackfillNotice('Backfill complete. Reloading images…')
       await Promise.all([reloadProducts(aid), reloadMemberships(aid), reloadEvents(aid)])
-      setBackfillNotice('Backfill complete.')
+      setBackfillNotice(failed === 0 ? 'Backfill complete.' : `Backfill complete with ${failed} failures. ${lastError ? `Last: ${lastError}` : ''}`)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Backfill failed.'
       setBackfillNotice(msg)
