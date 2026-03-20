@@ -87,7 +87,7 @@ For full Lovable context (copy-paste into Lovable.dev), see [CONTEXT.md](CONTEXT
       npm run dev
       ```
 
-   Set `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, etc. in `.env` for routes that need them. If Vercel listens on another port, set `VITE_API_PROXY_TARGET=http://127.0.0.1:<port>` in `.env`.
+   Set `SUPABASE_SERVICE_ROLE_KEY`, **`OPENAI_API_KEY`** (portrait + catalog images) and/or `GEMINI_API_KEY`, etc. in `.env` for routes that need them. If Vercel listens on another port, set `VITE_API_PROXY_TARGET=http://127.0.0.1:<port>` in `.env`.
 
    **Alternative:** run only `npm run dev:vercel` and open the URL Vercel prints (often [http://localhost:3000](http://localhost:3000)) instead of 5173.
 
@@ -115,15 +115,15 @@ Serverless routes in `api/` are ready for production. Set the env vars in `.env.
 | `/api/stripe-connect` | POST | Create Stripe Connect account link (artist onboarding) |
 | `/api/stripe-checkout` | POST | Create Stripe Checkout Session (purchase or subscription) |
 | `/api/stripe-webhook` | POST | Stripe webhook (configure in Stripe Dashboard) |
-| `/api/avatar-generate` | POST | Store avatar; `mode: "enhance"` + `provider: "gemini"` uses **Gemini** native image (set `GEMINI_API_KEY`; optional `GEMINI_IMAGE_MODEL`) |
-| `/api/product-image-generate` | POST | Catalog images (one target only): `{ "artist_id", "product_id" \| "membership_id" \| "event_id", "creative_prompt"?: "…" }` generates with Gemini; add `"source_image_url"` to **clean / standardize** an uploaded photo (optional `creative_prompt` as extra notes). Updates `products`, `memberships`, or `events.image_url`. Storage: `product-covers/`, `membership-covers/`, `event-covers/` (and client uploads under `product-covers/…`, `membership-uploads/…`, `event-uploads/…`). |
+| `/api/avatar-generate` | POST | Store avatar; `mode: "enhance"` uses **OpenAI** (DALL·E 2 edits) and/or **Gemini** — set `OPENAI_API_KEY` and/or `GEMINI_API_KEY`. Server picks OpenAI first when both exist unless `PREFERRED_AVATAR_ENHANCE_PROVIDER=gemini`. Optional `provider` in body overrides. |
+| `/api/product-image-generate` | POST | Catalog images (one target): `{ artist_id, product_id \| membership_id \| event_id, creative_prompt?, source_image_url? }`. Uses **OpenAI** when `OPENAI_API_KEY` is set (default if both Gemini + OpenAI are set), else **Gemini**. Set `PREFERRED_CATALOG_IMAGE_PROVIDER=gemini` to prefer Gemini when both keys exist. Updates `image_url`; storage under `product-covers/`, `membership-covers/`, `event-covers/`. |
 | `/api/artist-bio` | POST | Body `{ "action": "research", "query": "…" }` (Perplexity / Wikipedia) or `{ "action": "polish", "draft": "…", "display_name"?: "…" }` (Gemini). Requires `Authorization: Bearer` (Supabase JWT). Env: `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, optional `GEMINI_TEXT_MODEL`. |
 | `/api/avatar-tts` | POST | TTS for avatar (ElevenLabs when key set) |
 | `/api/sync` | GET | Health: `{ ok: true, service: "signal-api" }` |
 | `/api/sync` | POST | Sync catalogue from Bandcamp / Apple Music / Shopify |
 | `/api/payouts-run` | POST | Cron: run artist payouts (optional `Authorization: Bearer CRON_SECRET`) |
 
-Run migrations in order: `00001_initial_schema.sql`, `00002_platform_and_integrations.sql`, `00003_grants.sql`, `00004_production_backend.sql`, `00005_integrations_unique.sql`, then `00006_avatars_bucket.sql` (creates the **avatars** storage bucket and policies so profile/avatar uploads work), then **`00007_profile_visible.sql`** (online/offline profile visibility + stricter public read policies), then **`00008_membership_image_url.sql`** (optional image per membership tier).
+Run migrations in order: `00001_initial_schema.sql`, `00002_platform_and_integrations.sql`, `00003_grants.sql`, `00004_production_backend.sql`, `00005_integrations_unique.sql`, then `00006_avatars_bucket.sql` (creates the **avatars** storage bucket and policies so profile/avatar uploads work), then **`00007_profile_visible.sql`** (online/offline profile visibility + stricter public read policies), then **`00008_membership_image_url.sql`** (optional image per membership tier), then **`00009_stream_chat.sql`** (live chat messages + Realtime; required for `/live/...` chat), then **`00010_feed_only_user_role_artist.sql`** (discovery feed only includes users with `role = 'artist'` so fan accounts don’t appear as artist cards).
 
 ## Live streaming (RTMP server)
 
@@ -151,24 +151,26 @@ To ingest live video from OBS (or any RTMP encoder) and serve HLS for the web ap
    - **Settings → Stream**
    - Service: Custom…
    - **Server:** `rtmp://localhost:1935/live`
-   - **Stream key:** any key (e.g. `my-stream` or a UUID from your `streams` table)
+   - **Stream key:** either the **stream UUID** from Studio → **Go live**, or a **custom key** (e.g. `whitesheep21`) that you enter there and **Save stream key** so HLS paths and the in-app player stay in sync.
 
-4. **Wire a stream in the app**
+4. **Wire playback in the app**
 
-   When an artist “goes live”, set the stream’s `playback_url` in the DB to the HLS URL, e.g.:
+   In **Dashboard → Go live**, set a custom OBS key if you want, **Save stream key**, then copy the HLS URL and **Save playback URL to stream** (optional in dev if `VITE_HLS_BASE_URL` is set — the player falls back using `stream_key` + base). Fans always open `/live/<stream-uuid>`.
 
-   - `http://localhost:8000/live/my-stream/index.m3u8`
+   After OBS is connected, click **Show as live on Signal** so `is_live` is set: your stream can appear on the **discovery feed** and a **Watch live** banner on your **artist profile**. Click **End on Signal** when you stop.
 
-   (In production, use your public host and optionally `VITE_HLS_BASE_URL` in `.env`.)
+   The in-app player uses **hls.js** in Chrome/Firefox; Safari uses native HLS. To sanity-check HLS, open `http://127.0.0.1:8000/live/<stream_key>/index.m3u8` in a browser (visiting `/live/<key>` without `index.m3u8` redirects to the playlist).
+
+   You can still set `streams.playback_url` manually in Supabase if you prefer (e.g. a CDN URL in production).
 
 5. **Optional env** (see `.env.example`):
 
-   - `RTMP_PORT` (default 1935), `RTMP_HTTP_PORT` (default 8000), `RTMP_MEDIA_ROOT`, `RTMP_FFMPEG_PATH`, `VITE_HLS_BASE_URL`
+   - `RTMP_PORT` (default 1935), `RTMP_HTTP_PORT` (default 8000), `RTMP_MEDIA_ROOT`, `RTMP_FFMPEG_PATH`, `VITE_HLS_BASE_URL`, `VITE_RTMP_URL` (shown in Dashboard)
 
 ## MVP scope
 
 - Discovery feed (Pinterest-style masonry grid)
-- Live streaming (RTMP ingest → HLS; set `playback_url` on a stream for playback)
+- Live streaming (RTMP → HLS; **Go live** + **Show as live on Signal**; `playback_url` / `VITE_HLS_BASE_URL`; profile **Watch live**)
 - Avatar creation (upload image → stored; optional OpenAI/ElevenLabs later)
 - In-stream purchase (mock; replace with Stripe for production)
 - 20-minute free viewing paywall

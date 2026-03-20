@@ -1,8 +1,8 @@
 /**
  * POST /api/avatar-generate
  * Store avatar; optional enhance via Gemini (GEMINI_API_KEY) or OpenAI (OPENAI_API_KEY) when mode=enhance.
- * Body: { artist_id, image_url } or multipart with file.
- * Headers: Authorization: Bearer <jwt>
+ * Body: { artist_id, image_url, mode?, provider?, enhance_instruction? }
+ * provider: 'openai' | 'gemini' — if omitted, prefers OPENAI when set, else Gemini.
  */
 import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from './_lib/supabase.js'
@@ -10,6 +10,7 @@ import {
   DEFAULT_GEMINI_IMAGE_MODEL,
   enhancePortraitWithGemini,
 } from './_lib/geminiAvatar.js'
+import { enhancePortraitWithOpenAI } from './_lib/openaiAvatar.js'
 
 const openaiKey = process.env.OPENAI_API_KEY
 const geminiKey = process.env.GEMINI_API_KEY
@@ -27,6 +28,27 @@ async function getUserFromJwt(token: string): Promise<{ id: string } | null> {
   return error ? null : user ? { id: user.id } : null
 }
 
+function resolveEnhanceProvider(
+  explicit: string | undefined
+): 'openai' | 'gemini' {
+  if (explicit === 'gemini') {
+    if (geminiKey) return 'gemini'
+    if (openaiKey) return 'openai'
+    return 'gemini'
+  }
+  if (explicit === 'openai') {
+    if (openaiKey) return 'openai'
+    if (geminiKey) return 'gemini'
+    return 'openai'
+  }
+  const pref = process.env.PREFERRED_AVATAR_ENHANCE_PROVIDER?.trim().toLowerCase()
+  if (pref === 'gemini' && geminiKey) return 'gemini'
+  if (pref === 'openai' && openaiKey) return 'openai'
+  if (openaiKey) return 'openai'
+  if (geminiKey) return 'gemini'
+  return 'openai'
+}
+
 export default async function handler(
   req: {
     method?: string
@@ -35,7 +57,6 @@ export default async function handler(
       image_url?: string
       mode?: 'store' | 'enhance'
       provider?: 'openai' | 'gemini'
-      /** Optional hints for Gemini enhance (chat-style instructions). */
       enhance_instruction?: string
     }
     headers?: { authorization?: string }
@@ -71,12 +92,14 @@ export default async function handler(
     res.status(403).json({ error: 'Forbidden' })
     return
   }
-  const selectedProvider = provider === 'gemini' ? 'gemini' : 'openai'
+
+  const selectedProvider = mode === 'enhance' ? resolveEnhanceProvider(provider) : 'openai'
   if (mode === 'enhance') {
-    const providerKeyMissing = selectedProvider === 'gemini' ? !geminiKey : !openaiKey
-    if (providerKeyMissing) {
+    const hasKey = selectedProvider === 'gemini' ? !!geminiKey?.trim() : !!openaiKey?.trim()
+    if (!hasKey) {
       res.status(400).json({
-        error: 'Portrait enhancement is not configured on the server yet.',
+        error:
+          'Portrait enhancement is not configured. Set OPENAI_API_KEY and/or GEMINI_API_KEY on the server.',
       })
       return
     }
@@ -85,12 +108,13 @@ export default async function handler(
   let finalUrl = image_url
   if (mode === 'enhance' && (openaiKey || geminiKey)) {
     try {
-      if (selectedProvider === 'gemini' && geminiKey && supabaseAdmin) {
+      const instr = typeof enhance_instruction === 'string' ? enhance_instruction : null
+      if (selectedProvider === 'gemini' && geminiKey) {
         const { imageBase64, mimeType } = await enhancePortraitWithGemini({
           apiKey: geminiKey,
           sourceImageUrl: image_url,
           model: geminiImageModel,
-          userInstruction: typeof enhance_instruction === 'string' ? enhance_instruction : null,
+          userInstruction: instr,
         })
         const buf = Buffer.from(imageBase64, 'base64')
         const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
@@ -106,8 +130,24 @@ export default async function handler(
         const { data: pub } = supabaseAdmin.storage.from('avatars').getPublicUrl(storagePath)
         finalUrl = pub.publicUrl
       } else if (selectedProvider === 'openai' && openaiKey) {
-        // OpenAI image edit path not wired yet; return original URL.
-        finalUrl = image_url
+        const { imageBase64, mimeType } = await enhancePortraitWithOpenAI({
+          apiKey: openaiKey,
+          sourceImageUrl: image_url,
+          userInstruction: instr,
+        })
+        const buf = Buffer.from(imageBase64, 'base64')
+        const ext = mimeType.includes('png') ? 'png' : 'jpg'
+        const storagePath = `avatars/${artist_id}/enhanced-openai-${randomUUID()}.${ext}`
+        const { error: upErr } = await supabaseAdmin.storage.from('avatars').upload(storagePath, buf, {
+          contentType: mimeType,
+          upsert: true,
+        })
+        if (upErr) {
+          res.status(500).json({ error: `Enhanced image upload failed: ${upErr.message}` })
+          return
+        }
+        const { data: pub } = supabaseAdmin.storage.from('avatars').getPublicUrl(storagePath)
+        finalUrl = pub.publicUrl
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Enhancement failed'
@@ -121,7 +161,6 @@ export default async function handler(
     style: 'default',
   })
   if (insertErr) {
-    // History row is optional: clients update users/artists.avatar_url from storage/API URL.
     console.warn('[avatar-generate] avatars insert skipped:', insertErr.message)
     res.status(200).json({
       success: true,

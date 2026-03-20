@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
 import { DEMO_ARTIST_PROFILES } from '../data/demoArtists'
 import { catalogCardImageUrl } from '../lib/catalogImage'
+import { stripCitationMarkers } from '../lib/cleanBioText'
 
 type ArtistState = {
   display_name: string
@@ -27,6 +28,7 @@ export function ArtistProfile() {
   const [purchaseProduct, setPurchaseProduct] = useState<Product | null>(null)
   const [joinMembership, setJoinMembership] = useState<Membership | null>(null)
   const [mockToast, setMockToast] = useState<string | null>(null)
+  const [liveStream, setLiveStream] = useState<{ id: string; title: string | null } | null>(null)
 
   const isDemo = artistId?.startsWith('demo-artist-')
 
@@ -48,6 +50,10 @@ export function ArtistProfile() {
         setMemberships(
           profile.memberships as { id: string; title: string; price_cents: number; image_url: string | null }[]
         )
+        const liveItem = DEMO_FEED_ITEMS.find(
+          (i) => i.artist_id === artistId && i.item_type === 'stream' && i.is_live
+        )
+        setLiveStream(liveItem ? { id: liveItem.id, title: liveItem.title } : null)
       } else if (demo) {
         setArtist({
           display_name: demo.title,
@@ -58,8 +64,13 @@ export function ArtistProfile() {
         setEvents([])
         setProducts([])
         setMemberships([])
+        const liveItem = DEMO_FEED_ITEMS.find(
+          (i) => i.artist_id === artistId && i.item_type === 'stream' && i.is_live
+        )
+        setLiveStream(liveItem ? { id: liveItem.id, title: liveItem.title } : null)
       } else {
         setNotFound(true)
+        setLiveStream(null)
       }
       setLoading(false)
       return
@@ -67,6 +78,7 @@ export function ArtistProfile() {
 
     setLoading(true)
     setNotFound(false)
+    setLiveStream(null)
     supabase
       .from('artists')
       .select('display_name, handle, avatar_url, bio')
@@ -102,6 +114,23 @@ export function ArtistProfile() {
       .select('id, title, price_cents, image_url')
       .eq('artist_id', artistId)
       .then(({ data }) => setMemberships((data ?? []) as Membership[]))
+
+    const loadLive = () => {
+      void supabase
+        .from('streams')
+        .select('id, title')
+        .eq('artist_id', artistId)
+        .eq('is_live', true)
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          setLiveStream(data ? { id: data.id, title: data.title } : null)
+        })
+    }
+    loadLive()
+    const livePoll = window.setInterval(loadLive, 12000)
+    return () => window.clearInterval(livePoll)
   }, [artistId, isDemo])
 
   // Open product or membership modal from URL (?product=id or ?membership=id)
@@ -173,6 +202,22 @@ export function ArtistProfile() {
           <span aria-hidden>←</span> Feed
         </Link>
       </div>
+
+      {liveStream && (
+        <div className="relative z-20 pt-14 px-4 max-w-4xl mx-auto">
+          <Link
+            to={`/live/${liveStream.id}`}
+            className="flex items-center justify-center gap-2 w-full rounded-xl bg-red-600 text-white text-sm font-semibold py-3 px-4 shadow-lg hover:bg-red-700 transition-colors"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+            </span>
+            Watch live{liveStream.title ? ` — ${liveStream.title}` : ''}
+          </Link>
+        </div>
+      )}
 
       {/* Mock toast */}
       {mockToast && (
@@ -254,7 +299,9 @@ export function ArtistProfile() {
             <h2 className="text-lg font-semibold text-[var(--signal-ink)] mb-3" style={{ fontFamily: 'var(--font-display)' }}>
               About
             </h2>
-            <p className="text-[var(--signal-ink-muted)] leading-relaxed max-w-2xl">{artist.bio}</p>
+            <p className="text-[var(--signal-ink-muted)] leading-relaxed max-w-2xl whitespace-pre-wrap">
+              {stripCitationMarkers(artist.bio)}
+            </p>
           </section>
         )}
 
@@ -273,9 +320,9 @@ export function ArtistProfile() {
                   to={e.id.startsWith('demo-') ? `/live/demo-1` : `/live/${e.id}`}
                   className="block rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-white"
                 >
-                  <div className="aspect-video bg-[var(--signal-silver-light)]">
+                  <div className="aspect-video w-full overflow-hidden bg-[var(--signal-silver-light)]">
                     {eventCardImg ? (
-                      <img src={eventCardImg} alt="" className="w-full h-full object-cover" />
+                      <img src={eventCardImg} alt="" className="h-full w-full object-cover object-center" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center p-4">
                         <span className="text-sm font-medium text-[var(--signal-ink)] text-center">{e.title}</span>
@@ -313,9 +360,9 @@ export function ArtistProfile() {
                   onClick={() => setJoinMembership(m)}
                   className="rounded-[var(--radius-card)] border border-[var(--signal-gold)]/30 bg-[var(--signal-white-pure)] min-w-[160px] max-w-[220px] text-left overflow-hidden hover:border-[var(--signal-gold)]/60 hover:bg-[var(--signal-silver-light)]/30 transition-colors"
                 >
-                  <div className="aspect-[4/3] bg-[var(--signal-silver-light)]/50">
+                  <div className="aspect-[3/4] w-full overflow-hidden bg-[var(--signal-silver-light)]/50">
                     {tierCardImg ? (
-                      <img src={tierCardImg} alt="" className="h-full w-full object-cover" />
+                      <img src={tierCardImg} alt="" className="h-full w-full object-cover object-center" />
                     ) : (
                       <div className="h-full w-full flex items-center justify-center px-2">
                         <span className="text-xs text-[var(--signal-ink-muted)] text-center">{m.title}</span>
@@ -352,9 +399,9 @@ export function ArtistProfile() {
                   onClick={() => setPurchaseProduct(p)}
                   className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-white text-left hover:border-[var(--signal-gold)]/50 hover:shadow-md transition-all"
                 >
-                  <div className="aspect-[3/4] bg-[var(--signal-silver-light)]">
+                  <div className="aspect-[3/4] w-full overflow-hidden bg-[var(--signal-silver-light)]">
                     {productCardImg ? (
-                      <img src={productCardImg} alt="" className="w-full h-full object-cover" />
+                      <img src={productCardImg} alt="" className="h-full w-full object-cover object-center" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center p-3">
                         <span className="text-xs text-[var(--signal-ink-muted)] text-center line-clamp-4">{p.title}</span>

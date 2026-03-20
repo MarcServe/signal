@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth, type UserProfile } from '../contexts/AuthContext'
@@ -15,6 +15,13 @@ export function Onboarding() {
     const { error: doneError } = await supabase.from('users').update({ avatar_setup_done: true }).eq('id', user.id)
     if (doneError) {
       throw new Error(`Could not mark onboarding complete: ${doneError.message}`)
+    }
+    const role = profile?.role ?? 'fan'
+    // Fans must never get an `artists` row from onboarding — that exposed them on the discovery feed.
+    if (role !== 'artist') {
+      await refreshProfile()
+      navigate('/dashboard', { replace: true })
+      return
     }
     const { data: artistRow, error: artistSelectError } = await supabase.from('artists').select('id').eq('user_id', user.id).maybeSingle()
     if (artistSelectError) {
@@ -39,6 +46,13 @@ export function Onboarding() {
     navigate(goToDashboard ? '/dashboard' : '/', { replace: true })
   }
 
+  useEffect(() => {
+    if (authLoading || !user || !profile) return
+    if (profile.role === 'fan') {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [authLoading, user, profile, navigate])
+
   const handleSkip = async () => {
     if (skipping || !user?.id) return
     setMessage(null)
@@ -58,8 +72,8 @@ export function Onboarding() {
     setUploading(true)
     setMessage(null)
     try {
+      const isArtist = profile?.role === 'artist'
       const { data: artistRow } = await supabase.from('artists').select('id').eq('user_id', user.id).maybeSingle()
-      const isArtist = profile?.role === 'artist' || !!artistRow?.id
       if (isArtist) {
         let artistId: string | null = artistRow?.id ?? null
         if (!artistId) {
@@ -129,6 +143,20 @@ export function Onboarding() {
   if (!user) {
     navigate('/login', { replace: true })
     return null
+  }
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)]">
+        <p className="text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>Loading…</p>
+      </div>
+    )
+  }
+  if (profile.role === 'fan') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)]">
+        <p className="text-sm text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>Redirecting…</p>
+      </div>
+    )
   }
 
   return (

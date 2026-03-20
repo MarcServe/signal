@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { getFeedItemDetailPath } from '../lib/feedNavigation'
 import type { FeedItem, FeedItemType } from '../types/feed'
 
 export interface DiscoveryCardProps {
@@ -20,19 +21,7 @@ export function DiscoveryCard({ item }: DiscoveryCardProps) {
   const aspectClass = isDemoCard ? 'aspect-[3/4]' : (aspectByType[item.item_type] || 'aspect-[3/4]')
 
   const handleTap = () => {
-    if (item.item_type === 'stream' && item.is_live) {
-      navigate(`/live/${item.id}`)
-    } else if (item.item_type === 'artist') {
-      navigate(`/artist/${item.artist_id}`)
-    } else if (item.item_type === 'product' || item.item_type === 'track') {
-      navigate(`/artist/${item.artist_id}?product=${item.id}`)
-    } else if (item.item_type === 'event') {
-      navigate(`/artist/${item.artist_id}?event=${item.id}`)
-    } else if (item.item_type === 'stream') {
-      navigate(`/live/${item.id}`)
-    } else {
-      navigate(`/live/${item.id}`)
-    }
+    navigate(getFeedItemDetailPath(item))
   }
 
   return (

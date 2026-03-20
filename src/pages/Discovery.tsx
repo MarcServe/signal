@@ -51,9 +51,10 @@ export function Discovery() {
   const [feedFallbackReason, setFeedFallbackReason] = useState<'none' | 'empty_or_error' | 'not_configured'>('none')
   const loadingRef = useRef(false)
 
+  /** Only artists must finish portrait onboarding before browsing the feed. Fans can explore immediately. */
   useEffect(() => {
     if (authLoading || !user || !profile) return
-    if (profile.avatar_setup_done !== true) {
+    if (profile.role === 'artist' && profile.avatar_setup_done !== true) {
       navigate('/onboarding', { replace: true })
     }
   }, [authLoading, user, profile, navigate])
@@ -129,8 +130,10 @@ export function Discovery() {
   }, [user?.id, profile?.role])
 
   useEffect(() => {
-    loadPage(0)
-  }, [loadPage])
+    if (authLoading) return
+    if (user && !profile) return
+    void loadPage(0)
+  }, [authLoading, user, profile, loadPage])
 
   useEffect(() => {
     if (!hasMore || loading) return
@@ -149,8 +152,15 @@ export function Discovery() {
     return items.filter((item) => feedItemMatchesQuery(item, feedQuery))
   }, [items, feedQuery])
 
+  const feedBootstrapping = authLoading || (user && !profile) || (loading && items.length === 0)
+
   return (
     <div style={masonryGridContainerStyle} className="min-h-screen">
+      {feedBootstrapping && (
+        <div className="sticky top-0 z-20 flex min-h-[40vh] items-center justify-center px-4 text-sm text-[var(--signal-ink-muted)]">
+          Loading feed…
+        </div>
+      )}
       {feedFallbackReason === 'not_configured' && (
         <div className="sticky top-0 z-20 border-b border-amber-200/80 bg-amber-50 px-4 py-2 text-center text-xs text-amber-950">
           Live data isn&apos;t wired up for this build yet. Showing preview cards only — your team can connect the app
@@ -169,11 +179,13 @@ export function Discovery() {
           Filtering by &ldquo;{feedQuery}&rdquo; — {filteredItems.length} result{filteredItems.length === 1 ? '' : 's'}
         </div>
       )}
-      <MasonryGrid
-        items={filteredItems}
-        renderItem={(item) => <DiscoveryCard item={item} />}
-        keyExtractor={(item) => `${item.item_type}-${item.id}`}
-      />
+      {!feedBootstrapping && (
+        <MasonryGrid
+          items={filteredItems}
+          renderItem={(item) => <DiscoveryCard item={item} />}
+          keyExtractor={(item) => `${item.item_type}-${item.id}`}
+        />
+      )}
       {items.length > 0 && feedQuery && filteredItems.length === 0 && !loading && (
         <div className="py-12 text-center text-[var(--signal-ink-muted)] px-4">
           No cards match &ldquo;{feedQuery}&rdquo;. Try another word or{' '}

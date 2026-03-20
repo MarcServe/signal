@@ -4,9 +4,10 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { AI_FEATURES_ENABLED } from '../lib/features'
 import { fetchArtistBioFromWeb, polishArtistBioDraft } from '../lib/bioResearch'
+import { normalizePublicHandle, stripCitationMarkers } from '../lib/cleanBioText'
 
 export function BecomeArtist() {
-  const { user, profile, refreshProfile } = useAuth()
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   const [displayName, setDisplayName] = useState('')
   const [handle, setHandle] = useState('')
   const [loading, setLoading] = useState(false)
@@ -18,37 +19,99 @@ export function BecomeArtist() {
   const [bioResearchLoading, setBioResearchLoading] = useState(false)
   const [bioPolishLoading, setBioPolishLoading] = useState(false)
   const [bioNotice, setBioNotice] = useState<string | null>(null)
+  const [formReady, setFormReady] = useState(false)
   const navigate = useNavigate()
 
+  /**
+   * Only treat “already an artist” when `users.role` is artist AND an `artists` row exists.
+   * Fans with a stray `artists` row (legacy onboarding) must stay here so they can finish setup
+   * or submit once (insert hits unique user_id → role upgrade path).
+   */
   useEffect(() => {
+    if (authLoading) return
     if (!user) {
       navigate('/login', { replace: true })
       return
     }
-    supabase.from('artists').select('id').eq('user_id', user.id).maybeSingle().then(({ data }) => {
-      if (data) {
-        navigate('/dashboard', { replace: true })
-      }
-    })
-  }, [user, navigate])
+    if (!profile) return
+
+    if (profile.role !== 'artist') {
+      setFormReady(true)
+      return
+    }
+
+    let cancelled = false
+    setFormReady(false)
+    void supabase
+      .from('artists')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          setFormReady(true)
+          return
+        }
+        if (data) {
+          navigate('/dashboard', { replace: true })
+          return
+        }
+        setFormReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [authLoading, user, profile, navigate])
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)] px-4">
+        <p className="text-sm text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>
+          Loading…
+        </p>
+      </div>
+    )
+  }
 
   if (!user) {
-    return null
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)] px-4">
+        <p className="text-sm text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>
+          Redirecting…
+        </p>
+      </div>
+    )
+  }
+
+  if (!profile || !formReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)] px-4">
+        <p className="text-sm text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>
+          {!profile ? 'Loading your profile…' : 'Checking your account…'}
+        </p>
+      </div>
+    )
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
+    const handleNorm = normalizePublicHandle(handle)
     const { error } = await supabase.from('artists').insert({
       user_id: user.id,
       display_name: displayName || profile?.full_name || 'Artist',
-      handle: handle || null,
+      handle: handleNorm,
       avatar_url: profile?.avatar_url ?? null,
-      bio: bio.trim() || null,
+      bio: stripCitationMarkers(bio.trim()) || null,
     })
     setLoading(false)
     if (error) {
+      if (error.code === '23505' && error.message?.toLowerCase().includes('handle')) {
+        setMessage({ type: 'error', text: 'That @handle is already taken. Try another.' })
+        return
+      }
       if (error.code === '23505' && error.message?.includes('artists_user_id_key')) {
         await supabase.from('users').update({ role: 'artist' }).eq('id', user.id)
         await refreshProfile()

@@ -13,6 +13,10 @@ import {
   generateProductCoverWithGemini,
   enhanceCatalogImageWithGemini,
 } from './_lib/geminiProductImage.js'
+import {
+  generateProductCoverWithOpenAI,
+  enhanceCatalogImageWithOpenAI,
+} from './_lib/openaiCatalogImage.js'
 
 function getAuthHeader(req: { headers?: { authorization?: string } }): string | null {
   const auth = req.headers?.authorization
@@ -137,9 +141,17 @@ export default async function handler(
     return
   }
 
-  const geminiKey = process.env.GEMINI_API_KEY
-  if (!geminiKey?.trim()) {
-    res.status(400).json({ error: 'Image generation is not configured on the server yet.' })
+  const geminiKey = process.env.GEMINI_API_KEY?.trim()
+  const openaiKey = process.env.OPENAI_API_KEY?.trim()
+  /** Default: OpenAI when both keys are set (stable quotas); set PREFERRED_CATALOG_IMAGE_PROVIDER=gemini to prefer Gemini. */
+  const preferGemini = process.env.PREFERRED_CATALOG_IMAGE_PROVIDER?.trim().toLowerCase() === 'gemini'
+  const useGemini = preferGemini ? !!geminiKey : !!geminiKey && !openaiKey
+  const useOpenAI = !useGemini && !!openaiKey
+  if (!useGemini && !useOpenAI) {
+    res.status(400).json({
+      error:
+        'Image generation is not configured. Set GEMINI_API_KEY and/or OPENAI_API_KEY on the server (optional: PREFERRED_CATALOG_IMAGE_PROVIDER=openai).',
+    })
     return
   }
 
@@ -149,23 +161,54 @@ export default async function handler(
 
     const src = typeof sourceImageUrl === 'string' ? sourceImageUrl.trim() : ''
     if (src) {
-      const { imageBase64: b64, mimeType: mt } = await enhanceCatalogImageWithGemini({
-        apiKey: geminiKey,
-        sourceImageUrl: src,
-        userInstruction: typeof creativePrompt === 'string' ? creativePrompt : null,
-      })
-      imageBase64 = b64
-      mimeType = mt
+      if (useGemini && geminiKey) {
+        const { imageBase64: b64, mimeType: mt } = await enhanceCatalogImageWithGemini({
+          apiKey: geminiKey,
+          sourceImageUrl: src,
+          userInstruction: typeof creativePrompt === 'string' ? creativePrompt : null,
+          aspectRatio: target.kind === 'event' ? '16:9' : '3:4',
+        })
+        imageBase64 = b64
+        mimeType = mt
+      } else if (openaiKey) {
+        const { imageBase64: b64, mimeType: mt } = await enhanceCatalogImageWithOpenAI({
+          apiKey: openaiKey,
+          sourceImageUrl: src,
+          userInstruction: typeof creativePrompt === 'string' ? creativePrompt : null,
+          aspectRatio: target.kind === 'event' ? '16:9' : '3:4',
+        })
+        imageBase64 = b64
+        mimeType = mt
+      } else {
+        res.status(500).json({ error: 'No image provider available for enhancement.' })
+        return
+      }
     } else {
       const brief = typeof creativePrompt === 'string' ? creativePrompt : null
-      const { imageBase64: b64, mimeType: mt } = await generateProductCoverWithGemini({
-        apiKey: geminiKey,
-        title: target.title,
-        productType: target.typeLabel,
-        creativeBrief: brief,
-      })
-      imageBase64 = b64
-      mimeType = mt
+      if (useGemini && geminiKey) {
+        const { imageBase64: b64, mimeType: mt } = await generateProductCoverWithGemini({
+          apiKey: geminiKey,
+          title: target.title,
+          productType: target.typeLabel,
+          creativeBrief: brief,
+          catalogKind: target.kind,
+        })
+        imageBase64 = b64
+        mimeType = mt
+      } else if (openaiKey) {
+        const { imageBase64: b64, mimeType: mt } = await generateProductCoverWithOpenAI({
+          apiKey: openaiKey,
+          title: target.title,
+          productType: target.typeLabel,
+          creativeBrief: brief,
+          catalogKind: target.kind,
+        })
+        imageBase64 = b64
+        mimeType = mt
+      } else {
+        res.status(500).json({ error: 'No image provider available for generation.' })
+        return
+      }
     }
 
     const buf = Buffer.from(imageBase64, 'base64')

@@ -8,8 +8,12 @@ import { useSwipeGesture } from '../design-system/gestures'
 import { CheckoutDrawer } from '../components/CheckoutDrawer'
 import type { CheckoutType } from '../components/CheckoutDrawer'
 import { AI_FEATURES_ENABLED } from '../lib/features'
+import { resolveStreamPlaybackUrl } from '../lib/hlsPlayback'
+import { HlsVideo } from '../components/HlsVideo'
 
 const FREE_VIEW_MINUTES = 20
+
+type StreamChatRow = { id: string; display_name: string | null; body: string; created_at: string }
 
 function IconHeart({ className }: { className?: string }) {
   return (
@@ -36,8 +40,15 @@ function IconHands({ className }: { className?: string }) {
 export function LiveView() {
   const { streamId } = useParams<{ streamId: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
-  const [stream, setStream] = useState<{ id: string; title: string | null; playback_url: string | null; artist_id: string; is_live: boolean } | null>(null)
+  const { user, profile } = useAuth()
+  const [stream, setStream] = useState<{
+    id: string
+    title: string | null
+    playback_url: string | null
+    stream_key: string | null
+    artist_id: string
+    is_live: boolean
+  } | null>(null)
   const [artist, setArtist] = useState<{ display_name: string; avatar_url: string | null } | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [showPaywall, setShowPaywall] = useState(false)
@@ -57,6 +68,10 @@ export function LiveView() {
   const [showOverlaySheet, setShowOverlaySheet] = useState(false)
   const [showShareSheet, setShowShareSheet] = useState(false)
   const [memberships, setMemberships] = useState<{ id: string; title: string; price_cents: number }[]>([])
+  const [chatMessages, setChatMessages] = useState<StreamChatRow[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!streamId) return
@@ -66,6 +81,7 @@ export function LiveView() {
         id: demo.id,
         title: demo.title,
         playback_url: demo.playback_url,
+        stream_key: null,
         artist_id: demo.artist_id,
         is_live: demo.is_live,
       })
@@ -75,7 +91,7 @@ export function LiveView() {
     }
     supabase
       .from('streams')
-      .select('id, title, playback_url, artist_id, is_live')
+      .select('id, title, playback_url, stream_key, artist_id, is_live')
       .eq('id', streamId)
       .single()
       .then(({ data }) => {
@@ -97,6 +113,80 @@ export function LiveView() {
             .then(({ data: av }) => setAvatarUrl(av?.image_url ?? null))
         }
       })
+  }, [streamId])
+
+  /** Keep “Live” badge in sync when the artist toggles `is_live` from Dashboard. */
+  useEffect(() => {
+    if (!streamId || streamId.startsWith('demo-')) return
+    const iv = setInterval(() => {
+      void supabase
+        .from('streams')
+        .select('is_live')
+        .eq('id', streamId)
+        .single()
+        .then(({ data }) => {
+          if (data)
+            setStream((prev) => (prev ? { ...prev, is_live: data.is_live } : prev))
+        })
+    }, 10000)
+    return () => clearInterval(iv)
+  }, [streamId])
+
+  /** Live chat: load history + Supabase Realtime (requires migration 00009_stream_chat + Realtime enabled). */
+  useEffect(() => {
+    if (!streamId || streamId.startsWith('demo-')) {
+      setChatMessages([])
+      return
+    }
+    let cancelled = false
+    setChatError(null)
+
+    void supabase
+      .from('stream_chat_messages')
+      .select('id, display_name, body, created_at')
+      .eq('stream_id', streamId)
+      .order('created_at', { ascending: true })
+      .limit(100)
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          if (/relation|does not exist|404/i.test(error.message)) {
+            setChatError('Chat will work after the stream_chat migration is applied to your Supabase project.')
+          } else {
+            setChatError(error.message)
+          }
+          return
+        }
+        setChatMessages((data ?? []) as StreamChatRow[])
+      })
+
+    const channel = supabase
+      .channel(`stream-chat:${streamId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'stream_chat_messages',
+          filter: `stream_id=eq.${streamId}`,
+        },
+        (payload) => {
+          const row = payload.new as StreamChatRow
+          if (row?.id && row?.body) {
+            setChatMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]))
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' && !cancelled) {
+          setChatError((prev) => prev || 'Realtime error — enable Realtime for table stream_chat_messages in Supabase.')
+        }
+      })
+
+    return () => {
+      cancelled = true
+      void supabase.removeChannel(channel)
+    }
   }, [streamId])
 
   useEffect(() => {
@@ -166,6 +256,8 @@ export function LiveView() {
     )
   }
 
+  const playbackSrc = resolveStreamPlaybackUrl(stream)
+
   return (
     <div
       className="fixed inset-0 bg-black flex flex-col"
@@ -174,10 +266,10 @@ export function LiveView() {
     >
       {/* Full-bleed video */}
       <div className="absolute inset-0 flex items-center justify-center bg-[var(--signal-ink)]">
-        {stream.playback_url ? (
-          <video
+        {playbackSrc ? (
+          <HlsVideo
             className="max-h-full w-full object-contain"
-            src={stream.playback_url}
+            src={playbackSrc}
             autoPlay
             playsInline
             muted
@@ -204,34 +296,49 @@ export function LiveView() {
         </div>
       </div>
 
-      {/* Reactions — line icons, no emoji */}
+      {/* Reactions — original compact size; colour-coded for visibility on video */}
       <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-4 pointer-events-auto">
         <button
           type="button"
           onClick={() => setReactionCounts((c) => ({ ...c, heart: c.heart + 1 }))}
-          className="flex flex-col items-center gap-0.5 text-white/70 hover:text-white"
-          aria-label="Appreciate"
+          className="flex flex-col items-center gap-0.5 text-rose-500 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.85))] hover:text-rose-400"
+          aria-label="Love — tap to send a like"
+          title="Love — tap to send a like"
         >
           <IconHeart className="h-6 w-6" />
-          {reactionCounts.heart > 0 && <span className="text-[10px] tabular-nums tracking-widest">{reactionCounts.heart}</span>}
+          {reactionCounts.heart > 0 && (
+            <span className="text-[10px] tabular-nums tracking-widest text-rose-100 [text-shadow:0_0_8px_rgba(0,0,0,0.9)]">
+              {reactionCounts.heart}
+            </span>
+          )}
         </button>
         <button
           type="button"
           onClick={() => setReactionCounts((c) => ({ ...c, fire: c.fire + 1 }))}
-          className="flex flex-col items-center gap-0.5 text-white/70 hover:text-white"
-          aria-label="Highlight"
+          className="flex flex-col items-center gap-0.5 text-amber-400 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.85))] hover:text-amber-300"
+          aria-label="Highlight — celebrate a stand-out moment"
+          title="Highlight — celebrate a stand-out moment"
         >
           <IconSpark className="h-6 w-6" />
-          {reactionCounts.fire > 0 && <span className="text-[10px] tabular-nums tracking-widest">{reactionCounts.fire}</span>}
+          {reactionCounts.fire > 0 && (
+            <span className="text-[10px] tabular-nums tracking-widest text-amber-100 [text-shadow:0_0_8px_rgba(0,0,0,0.9)]">
+              {reactionCounts.fire}
+            </span>
+          )}
         </button>
         <button
           type="button"
           onClick={() => setReactionCounts((c) => ({ ...c, hands: c.hands + 1 }))}
-          className="flex flex-col items-center gap-0.5 text-white/70 hover:text-white"
-          aria-label="Clap"
+          className="flex flex-col items-center gap-0.5 text-[var(--signal-gold)] [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.85))] hover:text-[#e8d5a3]"
+          aria-label="Applause — clap for the artist"
+          title="Applause — clap for the artist"
         >
           <IconHands className="h-6 w-6" />
-          {reactionCounts.hands > 0 && <span className="text-[10px] tabular-nums tracking-widest">{reactionCounts.hands}</span>}
+          {reactionCounts.hands > 0 && (
+            <span className="text-[10px] tabular-nums tracking-widest text-[#fdf6e3] [text-shadow:0_0_8px_rgba(0,0,0,0.9)]">
+              {reactionCounts.hands}
+            </span>
+          )}
         </button>
       </div>
 
@@ -244,9 +351,9 @@ export function LiveView() {
         Chat
       </button>
       {showChat && (
-        <div className="absolute right-3 bottom-36 z-30 w-72 max-h-48 rounded-xl bg-black/80 text-white text-sm overflow-hidden flex flex-col pointer-events-auto">
-          <div className="p-2 border-b border-white/20 flex items-center justify-between">
-            <span>Live chat</span>
+        <div className="absolute right-3 bottom-36 z-30 w-[min(100vw-1.5rem,20rem)] max-h-[min(50vh,18rem)] rounded-xl bg-black/85 text-white text-sm overflow-hidden flex flex-col pointer-events-auto border border-white/15 shadow-xl">
+          <div className="p-2 border-b border-white/20 flex items-center justify-between shrink-0">
+            <span className="font-medium">Live chat</span>
             <button
               type="button"
               onClick={() => setShowPollsCard(true)}
@@ -255,9 +362,78 @@ export function LiveView() {
               Polls
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 text-white/80">
-            <p className="text-xs">Real-time chat connects when you go live.</p>
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
+            {streamId?.startsWith('demo-') ? (
+              <p className="text-xs text-white/70">Demo stream — chat is disabled.</p>
+            ) : chatError ? (
+              <p className="text-xs text-amber-200/90">{chatError}</p>
+            ) : chatMessages.length === 0 ? (
+              <p className="text-xs text-white/60">No messages yet. Say hi!</p>
+            ) : (
+              chatMessages.map((m) => (
+                <div key={m.id} className="text-xs leading-snug">
+                  <span className="font-semibold text-[var(--signal-gold)]">
+                    {m.display_name?.trim() || 'Fan'}
+                  </span>
+                  <span className="text-white/50"> · </span>
+                  <span className="text-white/90">{m.body}</span>
+                </div>
+              ))
+            )}
           </div>
+          {streamId && !streamId.startsWith('demo-') && (
+            <div className="p-2 border-t border-white/20 shrink-0">
+              {user ? (
+                <form
+                  className="flex gap-1.5"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const text = chatInput.trim().slice(0, 500)
+                    if (!text || !stream?.id || chatSending || streamId?.startsWith('demo-')) return
+                    setChatSending(true)
+                    setChatError(null)
+                    const displayName =
+                      profile?.full_name?.trim() || user.email?.split('@')[0] || 'Fan'
+                    void supabase
+                      .from('stream_chat_messages')
+                      .insert({
+                        stream_id: stream.id,
+                        user_id: user.id,
+                        display_name: displayName,
+                        body: text,
+                      })
+                      .then(({ error }) => {
+                        setChatSending(false)
+                        if (error) {
+                          setChatError(error.message)
+                          return
+                        }
+                        setChatInput('')
+                      })
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Message…"
+                    maxLength={500}
+                    disabled={chatSending}
+                    className="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/20 px-2 py-1.5 text-xs text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={chatSending || !chatInput.trim()}
+                    className="shrink-0 rounded-lg bg-[var(--signal-gold)] text-[var(--signal-ink)] px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                  >
+                    Send
+                  </button>
+                </form>
+              ) : (
+                <p className="text-[11px] text-white/60 text-center">Sign in to send messages.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
       {showPollsCard && (

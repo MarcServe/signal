@@ -29,14 +29,6 @@ function LogOutIcon({ className, strokeWidth = 1.5 }: { className?: string; stro
   )
 }
 
-function PlusIcon({ className, strokeWidth = 1.5 }: { className?: string; strokeWidth?: number }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={strokeWidth}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-    </svg>
-  )
-}
-
 function ArrowEnterIcon({ className, strokeWidth = 1.5 }: { className?: string; strokeWidth?: number }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={strokeWidth}>
@@ -148,21 +140,14 @@ export function TopBar() {
       <nav className="flex shrink-0 items-center gap-1" aria-label="Account">
         {user ? (
           <>
-            {profile?.role === 'artist' && (
-              <Link to="/dashboard" className={iconBtn} aria-label="Studio" title="Studio">
-                <GridIcon className="h-5 w-5" />
-              </Link>
-            )}
-            {profile?.role !== 'artist' && profile !== null && (
-              <Link
-                to="/become-artist"
-                className={`${iconBtn} text-[var(--signal-ink-muted)] hover:text-[var(--signal-gold)]`}
-                aria-label="Become an artist"
-                title="Become an artist"
-              >
-                <PlusIcon className="h-5 w-5" />
-              </Link>
-            )}
+            <Link
+              to="/dashboard"
+              className={iconBtn}
+              aria-label={profile?.role === 'artist' ? 'Studio' : 'Home / dashboard'}
+              title={profile?.role === 'artist' ? 'Studio' : 'Home / dashboard'}
+            >
+              <GridIcon className="h-5 w-5" />
+            </Link>
             <button type="button" onClick={handleSignOut} className={iconBtn} aria-label="Sign out" title="Sign out">
               <LogOutIcon className="h-5 w-5" />
             </button>

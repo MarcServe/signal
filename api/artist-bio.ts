@@ -4,6 +4,7 @@
  * Merged route to stay within Vercel Hobby serverless function limits.
  */
 import { supabaseAdmin } from './_lib/supabase.js'
+import { stripCitationMarkers } from './_lib/stripCitationMarkers.js'
 
 const UA = 'Signal/1.0 (artist bio; +https://github.com/MarcServe/signal)'
 const DEFAULT_TEXT_MODEL = 'gemini-2.0-flash'
@@ -39,7 +40,7 @@ async function tryPerplexity(query: string): Promise<string | null> {
           {
             role: 'system',
             content:
-              'You write a short neutral artist biography for a music app (2–4 sentences). Plain text only: no markdown, no links, no bullet points.',
+              'You write a short neutral artist biography for a music app (2–4 sentences). Plain text only: no markdown, no links, no bullet points, no citation markers or bracketed numbers like [1] or [1][3] — never include references or footnote-style numbers.',
           },
           {
             role: 'user',
@@ -54,7 +55,7 @@ async function tryPerplexity(query: string): Promise<string | null> {
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] }
     const text = data.choices?.[0]?.message?.content?.trim()
     if (!text || text.length < 20) return null
-    return text.slice(0, 1200)
+    return stripCitationMarkers(text.slice(0, 1200))
   } catch {
     return null
   }
@@ -101,7 +102,7 @@ async function tryWikipedia(query: string): Promise<string | null> {
     const first = Object.values(pages)[0]
     const extract = first?.extract?.trim()
     if (!extract || extract.length < 30) return null
-    return truncateBio(extract)
+    return stripCitationMarkers(truncateBio(extract))
   } catch {
     return null
   }
@@ -137,7 +138,7 @@ async function handleResearch(
     return
   }
 
-  res.status(200).json({ summary, source })
+  res.status(200).json({ summary: stripCitationMarkers(summary), source })
 }
 
 async function handlePolish(
@@ -177,7 +178,7 @@ ${draft}
 Rewrite as one cohesive "About" blurb of 2–4 sentences for a high-end music and live platform.
 
 Rules:
-- Tone: calm, professional, understated — never salesy, cute, or "AI-sounding". No emojis, hashtags, markdown, or bullet lists.
+- Tone: calm, professional, understated — never salesy, cute, or "AI-sounding". No emojis, hashtags, markdown, bullet lists, or citation markers like [1] or [1][3] (no bracketed reference numbers).
 - Use only what the notes reasonably support. Do not invent record deals, chart positions, famous venues, press quotes, or collaborators not mentioned.
 - If the notes are very sparse, write a minimal dignified intro (genre/mood/role) without fabricating biography.
 - Plain text only, single paragraph.`
@@ -205,7 +206,8 @@ Rules:
       })
       return
     }
-    const text = gJson.candidates?.[0]?.content?.parts?.map((p) => p.text).join('')?.trim()
+    const raw = gJson.candidates?.[0]?.content?.parts?.map((p) => p.text).join('')?.trim()
+    const text = raw ? stripCitationMarkers(raw) : ''
     if (!text || text.length < 20) {
       res.status(502).json({ error: 'No usable text returned. Try again or edit manually.' })
       return

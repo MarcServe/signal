@@ -23,15 +23,13 @@ export function Header() {
         <nav className="flex items-center gap-4">
           {user ? (
             <>
-              {profile?.role === 'artist' && (
-                <Link
-                  to="/dashboard"
-                  className="text-sm text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)]"
-                >
-                  Dashboard
-                </Link>
-              )}
-              {profile?.role !== 'artist' && profile !== null && (
+              <Link
+                to="/dashboard"
+                className="text-sm text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)]"
+              >
+                {profile?.role === 'artist' ? 'Dashboard' : 'My home'}
+              </Link>
+              {(!profile || profile.role !== 'artist') && (
                 <Link
                   to="/become-artist"
                   className="text-sm text-[var(--signal-gold)] hover:opacity-80"

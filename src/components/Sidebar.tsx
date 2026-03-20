@@ -4,23 +4,22 @@ import { ArtistQuickCreateModal } from './ArtistQuickCreateModal'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
- * Minimal rail: Home · Studio (dashboard or start) · Quick add (artists) · Settings.
+ * Minimal rail: Home · Studio · Quick add (artists) or Become an artist (signed-in fans) · Settings.
  * Messages & notifications live under Settings to keep the chrome quiet.
  */
 export function Sidebar() {
   const location = useLocation()
-  const { profile } = useAuth()
+  const { user, profile } = useAuth()
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
 
-  const studioTo = profile?.role === 'artist' ? '/dashboard' : '/become-artist'
-  const studioLabel = profile?.role === 'artist' ? 'Studio' : 'Start'
+  const studioTo = '/dashboard'
+  const studioLabel = profile?.role === 'artist' ? 'Studio' : 'Home'
   const studioActive =
-    location.pathname === studioTo ||
-    (studioTo === '/dashboard' &&
-      (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/avatar'))) ||
-    (studioTo === '/become-artist' && location.pathname.startsWith('/become-artist'))
+    location.pathname === '/dashboard' ||
+    (profile?.role === 'artist' && location.pathname.startsWith('/avatar'))
 
   const homeActive = location.pathname === '/'
+  const becomeArtistActive = location.pathname.startsWith('/become-artist')
   const settingsActive =
     location.pathname.startsWith('/settings') ||
     location.pathname === '/messages' ||
@@ -63,6 +62,15 @@ export function Sidebar() {
             </button>
             <ArtistQuickCreateModal open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} />
           </>
+        ) : user ? (
+          <Link
+            to="/become-artist"
+            className={navClass(becomeArtistActive)}
+            aria-label="Become an artist"
+            title="Become an artist"
+          >
+            <PlusIcon className="h-5 w-5" strokeWidth={1.5} />
+          </Link>
         ) : null}
         <Link to="/settings" className={navClass(settingsActive)} aria-label="Settings" title="Settings">
           <SettingsIcon className="h-5 w-5" strokeWidth={1.5} />

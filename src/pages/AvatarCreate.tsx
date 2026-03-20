@@ -205,6 +205,11 @@ export function AvatarCreate() {
       let apiRes: Response
       try {
         const trimmedInstr = enhanceInstruction?.trim()
+        const viteProvider = import.meta.env.VITE_AVATAR_ENHANCE_PROVIDER?.trim().toLowerCase()
+        const providerField =
+          viteProvider === 'openai' || viteProvider === 'gemini'
+            ? { provider: viteProvider as 'openai' | 'gemini' }
+            : {}
         apiRes = await fetch(apiUrl('/avatar-generate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -212,7 +217,7 @@ export function AvatarCreate() {
             artist_id: resolvedArtistId,
             image_url: imageUrlForEnhance,
             mode: 'enhance',
-            provider: 'gemini',
+            ...providerField,
             ...(trimmedInstr ? { enhance_instruction: trimmedInstr.slice(0, 800) } : {}),
           }),
         })
@@ -322,8 +327,11 @@ export function AvatarCreate() {
           </summary>
           <div className="px-4 pb-4 pt-0 border-t border-[var(--signal-silver-light)]/70">
             <p className="pt-3 text-xs text-[var(--signal-ink-muted)] leading-relaxed">
-              Studio-style pass using Signal’s image tools. Auto mode always includes gentle skin smoothing. On the live site
-              this runs automatically; in local development it needs the app backend running.
+              Uses your server’s <strong className="text-[var(--signal-ink)]">OPENAI_API_KEY</strong> (default) or{' '}
+              <strong className="text-[var(--signal-ink)]">GEMINI_API_KEY</strong>. Set{' '}
+              <code className="text-[10px] bg-[var(--signal-silver-light)]/50 px-1 rounded">VITE_AVATAR_ENHANCE_PROVIDER=gemini</code>{' '}
+              or <code className="text-[10px] bg-[var(--signal-silver-light)]/50 px-1 rounded">openai</code> to force one provider.
+              Local dev needs the API backend running (<code className="text-[10px]">vercel dev</code> or equivalent).
             </p>
             <div className="mt-4 flex rounded-xl border border-[var(--signal-silver-light)] overflow-hidden p-0.5 bg-[var(--signal-silver-light)]/20">
               <button

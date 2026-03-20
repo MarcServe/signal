@@ -1,4 +1,5 @@
 import { apiUrl, getSession } from './api'
+import { stripCitationMarkers } from './cleanBioText'
 
 export type BioResearchResult =
   | { ok: true; summary: string; source: 'perplexity' | 'wikipedia' }
@@ -30,7 +31,7 @@ export async function fetchArtistBioFromWeb(query: string): Promise<BioResearchR
       return { ok: false, error: data.error ?? `Request failed (${res.status})` }
     }
     if (data.summary && (data.source === 'perplexity' || data.source === 'wikipedia')) {
-      return { ok: true, summary: data.summary, source: data.source }
+      return { ok: true, summary: stripCitationMarkers(data.summary), source: data.source }
     }
     return { ok: true, summary: null, source: 'none', message: data.message }
   } catch {
@@ -66,7 +67,7 @@ export async function polishArtistBioDraft(draft: string, displayName?: string):
     if (!data.text?.trim()) {
       return { ok: false, error: 'Empty response. Try again.' }
     }
-    return { ok: true, text: data.text.trim() }
+    return { ok: true, text: stripCitationMarkers(data.text.trim()) }
   } catch {
     return { ok: false, error: 'Could not reach the writing assistant. Try again in a moment.' }
   }

@@ -33,7 +33,9 @@ try {
   if (e.code !== 'EEXIST') throw e
 }
 
+// node-media-server v4 logs "undefined:PORT" if `bind` is missing (listen still works; this fixes logs + host).
 const config = {
+  bind: '0.0.0.0',
   rtmp: {
     port: RTMP_PORT,
     chunk_size: 60000,
@@ -66,21 +68,53 @@ const hlsServer = http.createServer((req, res) => {
     res.end('Forbidden')
     return
   }
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(err.code === 'ENOENT' ? 404 : 500)
-      res.end(err.code === 'ENOENT' ? 'Not Found' : 'Error')
+
+  fs.stat(filePath, (serr, st) => {
+    if (serr) {
+      if (serr.code === 'ENOENT') {
+        res.setHeader('Content-Type', 'text/plain')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.writeHead(404)
+        res.end(
+          'Not Found. Use the full playlist URL:\n' +
+            pathname.replace(/\/?$/, '/') +
+            'index.m3u8\n\n(Stream must be publishing from OBS with the same stream key.)',
+        )
+        return
+      }
+      res.writeHead(500)
+      res.end('Error')
       return
     }
-    const ext = path.extname(filePath)
-    const types = {
-      '.m3u8': 'application/vnd.apple.mpegurl',
-      '.ts': 'video/MP2T',
+    if (st.isDirectory()) {
+      const loc = pathname.endsWith('/') ? pathname + 'index.m3u8' : pathname + '/index.m3u8'
+      res.writeHead(302, { Location: loc, 'Access-Control-Allow-Origin': '*' })
+      res.end()
+      return
     }
-    res.setHeader('Content-Type', types[ext] || 'application/octet-stream')
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.writeHead(200)
-    res.end(data)
+
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        const msg =
+          err.code === 'EISDIR'
+            ? 'This path is a folder. Open ' + pathname.replace(/\/?$/, '/') + 'index.m3u8'
+            : err.code === 'ENOENT'
+              ? 'Not Found'
+              : 'Error'
+        res.writeHead(err.code === 'ENOENT' ? 404 : 500)
+        res.end(msg)
+        return
+      }
+      const ext = path.extname(filePath)
+      const types = {
+        '.m3u8': 'application/vnd.apple.mpegurl',
+        '.ts': 'video/MP2T',
+      }
+      res.setHeader('Content-Type', types[ext] || 'application/octet-stream')
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.writeHead(200)
+      res.end(data)
+    })
   })
 })
 

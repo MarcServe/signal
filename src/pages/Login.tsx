@@ -1,13 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 
 export function Login() {
+  const { user, loading: authLoading } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (authLoading) return
+    if (user) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [authLoading, user, navigate])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,6 +43,16 @@ export function Login() {
       options: { redirectTo: `${window.location.origin}/` },
     })
     if (error) setMessage({ type: 'error', text: error.message })
+  }
+
+  if (authLoading || user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)] px-4">
+        <p className="text-sm text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>
+          {authLoading ? 'Loading…' : 'Redirecting…'}
+        </p>
+      </div>
+    )
   }
 
   return (
