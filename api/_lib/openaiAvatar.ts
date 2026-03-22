@@ -29,7 +29,7 @@ export async function enhancePortraitWithOpenAI(params: {
   const prompt = fullPrompt.length > 950 ? `${fullPrompt.slice(0, 900)}…` : fullPrompt
 
   const form = new FormData()
-  form.append('image', new Blob([pngBuf], { type: 'image/png' }), 'portrait.png')
+  form.append('image', new Blob([new Uint8Array(pngBuf)], { type: 'image/png' }), 'portrait.png')
   form.append('prompt', prompt)
   form.append('n', '1')
   form.append('size', '1024x1024')

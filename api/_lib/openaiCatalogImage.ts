@@ -82,7 +82,7 @@ export async function enhanceCatalogImageWithOpenAI(params: {
   prompt = prompt.slice(0, 1000)
 
   const form = new FormData()
-  form.append('image', new Blob([pngBuf], { type: 'image/png' }), 'catalog.png')
+  form.append('image', new Blob([new Uint8Array(pngBuf)], { type: 'image/png' }), 'catalog.png')
   form.append('prompt', prompt)
   form.append('n', '1')
   form.append('size', '1024x1024')
