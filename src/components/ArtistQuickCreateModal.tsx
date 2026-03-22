@@ -4,7 +4,12 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { apiUrl, getSession } from '../lib/api'
-import { catalogCardImageUrl, catalogImagePayload, type CatalogKind } from '../lib/catalogImage'
+import {
+  catalogCardImageUrl,
+  catalogImagePayload,
+  formatCatalogImageApiFailure,
+  type CatalogKind,
+} from '../lib/catalogImage'
 
 type Tab = 'product' | 'event' | 'membership'
 
@@ -199,14 +204,8 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
         ),
       })
       const raw = await res.text()
-      let body: { error?: string } = {}
-      try {
-        if (raw.trim()) body = JSON.parse(raw) as typeof body
-      } catch {
-        /* ignore */
-      }
       if (!res.ok) {
-        setImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+        setImageNotice(formatCatalogImageApiFailure(res, raw))
         return
       }
       const tbl = tableForKind(postCreate.kind)
@@ -245,14 +244,8 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
         ),
       })
       const raw = await res.text()
-      let body: { error?: string } = {}
-      try {
-        if (raw.trim()) body = JSON.parse(raw) as typeof body
-      } catch {
-        /* ignore */
-      }
       if (!res.ok) {
-        setImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+        setImageNotice(formatCatalogImageApiFailure(res, raw))
         return
       }
       const tbl = tableForKind(postCreate.kind)

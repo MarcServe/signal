@@ -4,7 +4,12 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { apiUrl, getSession } from '../lib/api'
 import { fetchArtistBioFromWeb, polishArtistBioDraft } from '../lib/bioResearch'
-import { catalogCardImageUrl, catalogImagePayload, type CatalogKind } from '../lib/catalogImage'
+import {
+  catalogCardImageUrl,
+  catalogImagePayload,
+  formatCatalogImageApiFailure,
+  type CatalogKind,
+} from '../lib/catalogImage'
 import { normalizePublicHandle, stripCitationMarkers } from '../lib/cleanBioText'
 import {
   buildHlsPlaylistUrl,
@@ -292,13 +297,7 @@ export function Dashboard() {
         // Keep going even if a single item fails; user still gets progress + best-effort backfill.
         if (!res.ok) {
           const raw = await res.text().catch(() => '')
-          let body: { error?: string } = {}
-          try {
-            if (raw.trim()) body = JSON.parse(raw) as typeof body
-          } catch {
-            /* ignore */
-          }
-          const msg = body.error || raw.slice(0, 200) || `HTTP ${res.status}`
+          const msg = formatCatalogImageApiFailure(res, raw)
           failed += 1
           lastError = msg
           setBackfillNotice(`Some images failed. Last error: ${msg.slice(0, 120)}`)
@@ -584,14 +583,8 @@ export function Dashboard() {
                     ),
                   })
                   const raw = await res.text()
-                  let body: { error?: string; image_url?: string } = {}
-                  try {
-                    if (raw.trim()) body = JSON.parse(raw) as typeof body
-                  } catch {
-                    /* ignore */
-                  }
                   if (!res.ok) {
-                    setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                    setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
                     return
                   }
                   await reloadProducts(artistId)
@@ -635,14 +628,8 @@ export function Dashboard() {
                       ),
                     })
                     const raw = await res.text()
-                    let body: { error?: string } = {}
-                    try {
-                      if (raw.trim()) body = JSON.parse(raw) as typeof body
-                    } catch {
-                      /* ignore */
-                    }
                     if (!res.ok) {
-                      setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                      setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
                       return
                     }
                     await reloadProducts(artistId)
@@ -1546,14 +1533,8 @@ export function Dashboard() {
                               ),
                             })
                             const raw = await res.text()
-                            let body: { error?: string } = {}
-                            try {
-                              if (raw.trim()) body = JSON.parse(raw) as typeof body
-                            } catch {
-                              /* ignore */
-                            }
                             if (!res.ok) {
-                              setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                              setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
                               return
                             }
                             await reloadEvents(artistId)
@@ -1597,14 +1578,8 @@ export function Dashboard() {
                                 ),
                               })
                               const raw = await res.text()
-                              let body: { error?: string } = {}
-                              try {
-                                if (raw.trim()) body = JSON.parse(raw) as typeof body
-                              } catch {
-                                /* ignore */
-                              }
                               if (!res.ok) {
-                                setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                                setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
                                 return
                               }
                               await reloadEvents(artistId)
@@ -1791,14 +1766,8 @@ export function Dashboard() {
                               ),
                             })
                             const raw = await res.text()
-                            let body: { error?: string } = {}
-                            try {
-                              if (raw.trim()) body = JSON.parse(raw) as typeof body
-                            } catch {
-                              /* ignore */
-                            }
                             if (!res.ok) {
-                              setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                              setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
                               return
                             }
                             await reloadMemberships(artistId)
@@ -1842,14 +1811,8 @@ export function Dashboard() {
                                 ),
                               })
                               const raw = await res.text()
-                              let body: { error?: string } = {}
-                              try {
-                                if (raw.trim()) body = JSON.parse(raw) as typeof body
-                              } catch {
-                                /* ignore */
-                              }
                               if (!res.ok) {
-                                setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                                setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
                                 return
                               }
                               await reloadMemberships(artistId)

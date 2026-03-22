@@ -115,6 +115,7 @@ npm run preview
 - Build command: `npm run build`; output directory: `dist`.
 - The `api/` folder is deployed as serverless functions at `/api/*`. Add **`SUPABASE_SERVICE_ROLE_KEY`** (plus `SUPABASE_URL` if not already implied) so `/api/avatar-generate` and other server routes can use the admin client. **Profile photos still save** if this is missing: the browser uploads to Supabase Storage and updates `users` / `artists` directly, but you’ll skip optional server-side avatar history until the service role is set.
 - Shared server code lives in `api/_lib/` (leading underscore so Vercel **does not** count those files toward the Hobby serverless function limit — only top-level `api/*.ts` routes count).
+- **404 on `/api/*`:** Open **`/api/sync`** in the browser. You should see JSON `{"ok":true,"service":"signal-api"}`. If that 404s, serverless routes are not deployed (common fix: Vercel → **Settings → General → Root Directory** = the repo root that contains the `api/` folder, then redeploy). If `/api/sync` works but another route 404s with **JSON** `error`, that is usually the handler (e.g. wrong `artist_id` / item id).
 
 ## API (production)
 

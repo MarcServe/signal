@@ -1,4 +1,28 @@
+import { apiUrl } from './api'
+
 export type CatalogKind = 'product' | 'membership' | 'event'
+
+/**
+ * Turn a failed `fetch` to `/api/product-image-generate` into a clear UI string.
+ * Vercel returns HTML 404 when a serverless route is missing; our handler returns JSON with `{ error }`.
+ */
+export function formatCatalogImageApiFailure(res: Response, rawBody: string): string {
+  const trimmed = rawBody.trim()
+  const looksLikeHtml = trimmed.startsWith('<!') || trimmed.toLowerCase().startsWith('<html')
+  if (res.status === 404 && (looksLikeHtml || trimmed === '')) {
+    const check = apiUrl('/sync')
+    return `Image API returned 404 (route not found). Open ${check} in a new tab — you should see JSON with "ok": true. If that 404s too, set Vercel → Settings → General → Root Directory to the repo folder that contains the top-level api/ directory, then redeploy.`
+  }
+  try {
+    if (trimmed) {
+      const j = JSON.parse(trimmed) as { error?: string }
+      if (typeof j.error === 'string' && j.error.trim()) return j.error.trim()
+    }
+  } catch {
+    /* ignore */
+  }
+  return trimmed ? trimmed.slice(0, 280) : `HTTP ${res.status}`
+}
 
 /** Body for POST `/api/product-image-generate` (matches Dashboard + Quick add). */
 export function catalogImagePayload(

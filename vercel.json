@@ -3,5 +3,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "devCommand": "vite"
+  "devCommand": "vite",
+  "functions": {
+    "api/product-image-generate.ts": {
+      "maxDuration": 60
+    }
+  }
 }
