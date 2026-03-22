@@ -9,7 +9,7 @@
     "dev:vite": "vite",
     "dev:vercel": "vercel dev --listen 3000 --yes",
     "vercel:link": "vercel link",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build --config vite.vercel.config.ts",
     "lint": "eslint .",
     "preview": "vite preview",
     "rtmp": "node server/rtmp-server.cjs"
