@@ -1,12 +1,8 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "name": "signal",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
-  "devCommand": "vite",
-  "functions": {
-    "api/product-image-generate.ts": {
-      "maxDuration": 60
-    }
-  }
+  "installCommand": "npm install",
+  "outputDirectory": ".vercel/output",
+  "devCommand": "vite"
 }
