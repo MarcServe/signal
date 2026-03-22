@@ -1,7 +1,23 @@
 /**
  * API base URL for serverless routes. Same origin in production (/api/*); set VITE_APP_URL for absolute URL.
  * Ignores common template values (e.g. https://yoursite.com) so local dev keeps using the Vite origin.
+ *
+ * Bare hostnames (e.g. `signal-xxx.vercel.app` without `https://`) must become real origins; otherwise
+ * `fetch(base + ...)` treats them as path-relative and the browser resolves them under the current origin
+ * (`/signal-xxx.vercel.app/api/...` → duplicate host in the path).
  */
+function normalizeAppBaseUrl(url: string): string {
+  const t = url.trim().replace(/\/+$/, '')
+  if (!t) return ''
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
+  const hostPart = t.split('/')[0] ?? t
+  const isLocal =
+    /^localhost\b/i.test(hostPart) ||
+    hostPart.startsWith('127.0.0.1') ||
+    hostPart.startsWith('[::1]')
+  return `${isLocal ? 'http' : 'https'}://${t}`
+}
+
 function isPlaceholderAppUrl(url: string): boolean {
   const u = url.trim().toLowerCase().replace(/\/$/, '')
   if (!u) return true
@@ -19,7 +35,7 @@ function isPlaceholderAppUrl(url: string): boolean {
 const envAppUrl = typeof import.meta.env.VITE_APP_URL === 'string' ? import.meta.env.VITE_APP_URL : ''
 const base =
   envAppUrl && !isPlaceholderAppUrl(envAppUrl)
-    ? envAppUrl.trim().replace(/\/$/, '')
+    ? normalizeAppBaseUrl(envAppUrl)
     : typeof window !== 'undefined'
       ? window.location.origin
       : ''
