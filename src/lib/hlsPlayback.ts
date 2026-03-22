@@ -4,10 +4,32 @@
  *
  * - Dashboard: suggest base from VITE_HLS_BASE_URL, or http://127.0.0.1:8000 in dev.
  * - LiveView: use saved streams.playback_url, or the same constructed URL when a base is available.
+ * - Production: loopback/private playback_url values (saved from local dev) are ignored so fans never hit 127.0.0.1.
  */
 
 function trimTrailingSlash(s: string): string {
   return s.replace(/\/+$/, '')
+}
+
+/**
+ * Loopback / RFC1918 hosts are fine in local dev but break when fans load the production app
+ * (browser cannot reach the artist’s laptop). URLs saved from dev often land in shared Supabase DBs.
+ */
+export function isLanOrLoopbackPlaybackUrl(urlStr: string): boolean {
+  const t = urlStr.trim()
+  if (!t) return false
+  try {
+    const u = new URL(t)
+    const h = u.hostname.toLowerCase()
+    if (h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '0.0.0.0') return true
+    if (h.endsWith('.localhost')) return true
+    if (/^10\./.test(h)) return true
+    if (/^192\.168\./.test(h)) return true
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(h)) return true
+    return false
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -57,7 +79,11 @@ export function resolveStreamPlaybackUrl(stream: {
   playback_url: string | null
   stream_key?: string | null
 }): string | null {
-  if (stream.playback_url?.trim()) return stream.playback_url.trim()
+  const stored = stream.playback_url?.trim()
+  if (stored) {
+    const allowStored = import.meta.env.DEV || !isLanOrLoopbackPlaybackUrl(stored)
+    if (allowStored) return stored
+  }
   const base = getHlsBaseUrl()
   if (!base) return null
   const seg = rtmpStreamSegment(stream)

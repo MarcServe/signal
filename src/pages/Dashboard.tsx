@@ -9,6 +9,7 @@ import { normalizePublicHandle, stripCitationMarkers } from '../lib/cleanBioText
 import {
   buildHlsPlaylistUrl,
   getHlsBaseUrl,
+  isLanOrLoopbackPlaybackUrl,
   normalizeRtmpStreamKeyInput,
   resolveStreamPlaybackUrl,
 } from '../lib/hlsPlayback'
@@ -89,6 +90,7 @@ export function Dashboard() {
   const [broadcastStreamId, setBroadcastStreamId] = useState<string | null>(null)
   const [creatingBroadcastStream, setCreatingBroadcastStream] = useState(false)
   const [savingPlaybackUrl, setSavingPlaybackUrl] = useState(false)
+  const [clearingBadPlaybackUrl, setClearingBadPlaybackUrl] = useState(false)
   const [savingStreamKey, setSavingStreamKey] = useState(false)
   const [streamKeyDraft, setStreamKeyDraft] = useState('')
   const [togglingSignalLive, setTogglingSignalLive] = useState(false)
@@ -1151,6 +1153,13 @@ export function Dashboard() {
                       onClick={async () => {
                         const url = broadcastStreamId ? buildHlsPlaylistUrl(rtmpSegment) : null
                         if (!url || !artistId) return
+                        if (import.meta.env.PROD && isLanOrLoopbackPlaybackUrl(url)) {
+                          setGoLiveNotice({
+                            type: 'err',
+                            text: 'That URL only works on your computer. Set VITE_HLS_BASE_URL on the host to a public HLS root (with CORS) before saving.',
+                          })
+                          return
+                        }
                         setGoLiveNotice(null)
                         setSavingPlaybackUrl(true)
                         const { error } = await supabase.from('streams').update({ playback_url: url }).eq('id', broadcastStreamId)
@@ -1171,6 +1180,41 @@ export function Dashboard() {
                         Stored in database:{' '}
                         <span className="break-all">{streams.find((s) => s.id === broadcastStreamId)?.playback_url}</span>
                       </p>
+                    ) : null}
+                    {import.meta.env.PROD &&
+                    broadcastStreamId &&
+                    selectedBroadcastStream?.playback_url?.trim() &&
+                    isLanOrLoopbackPlaybackUrl(selectedBroadcastStream.playback_url.trim()) ? (
+                      <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-[var(--signal-ink)]">
+                        <p className="mb-2">
+                          This stream still has a <strong>dev-only</strong> playback URL. Fans cannot load it from the live page
+                          until you save a public HLS URL (and set <code className="bg-[var(--signal-silver-light)]/50 px-1 rounded">VITE_HLS_BASE_URL</code> for
+                          constructed links).
+                        </p>
+                        <button
+                          type="button"
+                          disabled={clearingBadPlaybackUrl || !artistId}
+                          onClick={async () => {
+                            if (!broadcastStreamId || !artistId) return
+                            setGoLiveNotice(null)
+                            setClearingBadPlaybackUrl(true)
+                            const { error } = await supabase
+                              .from('streams')
+                              .update({ playback_url: null })
+                              .eq('id', broadcastStreamId)
+                            setClearingBadPlaybackUrl(false)
+                            if (error) {
+                              setGoLiveNotice({ type: 'err', text: error.message || 'Could not clear URL.' })
+                              return
+                            }
+                            await refreshStreams(artistId)
+                            setGoLiveNotice({ type: 'ok', text: 'Removed dev-only playback URL from this stream.' })
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg border border-amber-600/50 text-[var(--signal-ink)] hover:bg-amber-500/15 disabled:opacity-50"
+                        >
+                          {clearingBadPlaybackUrl ? 'Clearing…' : 'Clear dev-only URL from stream'}
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                   <div className="rounded-xl border border-[var(--signal-gold)]/30 bg-[var(--signal-gold)]/5 p-3 space-y-2">

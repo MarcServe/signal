@@ -95,8 +95,15 @@ export default async function handler(
     .select('id, user_id')
     .eq('id', artistId)
     .single()
-  if (artistErr || !artist || (artist as { user_id: string }).user_id !== user.id) {
-    res.status(403).json({ error: 'Forbidden' })
+  if (artistErr || !artist) {
+    res.status(404).json({ error: 'Artist not found' })
+    return
+  }
+  if ((artist as { user_id: string }).user_id !== user.id) {
+    res.status(403).json({
+      error:
+        'This account does not own that artist profile. Use the account that created the artist, or verify API and app use the same Supabase project.',
+    })
     return
   }
 
