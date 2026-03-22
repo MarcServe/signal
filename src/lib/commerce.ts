@@ -7,11 +7,12 @@
 import { supabase } from './supabase'
 
 export interface CheckoutItem {
-  productId: string
+  /** Null for membership / PPV mock rows that are not tied to a product row. */
+  productId: string | null
   artistId: string
   title: string
   amountCents: number
-  type: 'merch' | 'ticket' | 'membership' | 'track'
+  type: 'merch' | 'ticket' | 'membership' | 'track' | 'ppv'
 }
 
 async function getPlatformFeePercent(): Promise<number> {
@@ -38,10 +39,18 @@ export async function createMockPurchase(
 ): Promise<{ success: boolean; error?: string }> {
   const feePercent = await getPlatformFeePercent()
   const { platformFeeCents, artistPayoutCents } = computeFee(item.amountCents, feePercent)
+  const txType =
+    item.type === 'track' || item.type === 'merch' || item.type === 'ppv'
+      ? 'purchase'
+      : item.type === 'ticket'
+        ? 'ticket'
+        : item.type === 'membership'
+          ? 'subscription'
+          : 'purchase'
   const { error } = await supabase.from('transactions').insert({
     user_id: userId,
     artist_id: item.artistId,
-    type: item.type === 'track' ? 'purchase' : item.type === 'ticket' ? 'ticket' : item.type === 'membership' ? 'subscription' : 'purchase',
+    type: txType,
     product_id: item.productId,
     amount_cents: item.amountCents,
     platform_fee_cents: platformFeeCents,

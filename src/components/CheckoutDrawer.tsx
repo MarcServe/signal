@@ -3,6 +3,8 @@
  */
 import { useState } from 'react'
 import { apiUrl, getSession } from '../lib/api'
+import { supabase } from '../lib/supabase'
+import { createMockPurchase } from '../lib/commerce'
 
 export type CheckoutType = 'track' | 'ticket' | 'membership' | 'ppv'
 
@@ -71,9 +73,75 @@ export function CheckoutDrawer({
     setLoading(false)
   }
 
-  const handleMock = () => {
-    onSuccess?.()
-    onClose()
+  const handleMock = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) {
+        setError('Sign in to complete checkout')
+        setLoading(false)
+        return
+      }
+      const uid = session.user.id
+
+      if (type === 'track' || type === 'ticket') {
+        if (!itemId) {
+          setError('No product selected')
+          setLoading(false)
+          return
+        }
+        const res = await createMockPurchase(uid, {
+          productId: itemId,
+          artistId,
+          title,
+          amountCents,
+          type,
+        })
+        if (!res.success) {
+          setError(res.error || 'Mock checkout failed')
+          setLoading(false)
+          return
+        }
+      } else if (type === 'membership') {
+        if (!membershipId) {
+          setError('No membership tier selected')
+          setLoading(false)
+          return
+        }
+        const res = await createMockPurchase(uid, {
+          productId: null,
+          artistId,
+          title,
+          amountCents,
+          type: 'membership',
+        })
+        if (!res.success) {
+          setError(res.error || 'Mock checkout failed')
+          setLoading(false)
+          return
+        }
+      } else if (type === 'ppv') {
+        const res = await createMockPurchase(uid, {
+          productId: null,
+          artistId,
+          title,
+          amountCents,
+          type: 'ppv',
+        })
+        if (!res.success) {
+          setError(res.error || 'Mock checkout failed')
+          setLoading(false)
+          return
+        }
+      }
+
+      onSuccess?.()
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+    setLoading(false)
   }
 
   if (!open) return null
@@ -102,10 +170,11 @@ export function CheckoutDrawer({
           </button>
           <button
             type="button"
-            onClick={handleMock}
-            className="px-4 py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink-muted)] text-sm"
+            onClick={() => void handleMock()}
+            disabled={loading}
+            className="px-4 py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink-muted)] text-sm disabled:opacity-50"
           >
-            Mock
+            {loading ? '…' : 'Mock'}
           </button>
         </div>
         <button type="button" onClick={onClose} className="w-full py-2 mt-2 text-sm text-[var(--signal-ink-muted)]">

@@ -4,8 +4,8 @@
  *
  * Body (artist_id required; exactly one target id):
  * - { artist_id, product_id } — generate from product title/type (legacy)
- * - { artist_id, product_id | membership_id | event_id, creative_prompt? } — Gemini text-to-image from title + optional artist description
- * - { artist_id, product_id | membership_id | event_id, source_image_url } — clean / standardize an uploaded image (optional creative_prompt as extra notes)
+ * - { artist_id, product_id | membership_id | event_id, creative_prompt? } — text-to-image; if creative_prompt is set, an LLM expands it (OpenAI chat if OPENAI_API_KEY, else Gemini text)
+ * - { artist_id, product_id | membership_id | event_id, source_image_url } — clean / standardize; LLM tailors retouch notes from title + optional creative_prompt
  */
 import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from './_lib/supabase.js'
@@ -17,6 +17,10 @@ import {
   generateProductCoverWithOpenAI,
   enhanceCatalogImageWithOpenAI,
 } from './_lib/openaiCatalogImage.js'
+import {
+  refineCatalogEnhanceNotes,
+  refineCatalogGenerationPrompt,
+} from './_lib/catalogPromptLlm.js'
 
 function getAuthHeader(req: { headers?: { authorization?: string } }): string | null {
   const auth = req.headers?.authorization
@@ -161,11 +165,27 @@ export default async function handler(
 
     const src = typeof sourceImageUrl === 'string' ? sourceImageUrl.trim() : ''
     if (src) {
+      let enhanceInstruction: string | null =
+        typeof creativePrompt === 'string' && creativePrompt.trim() ? creativePrompt.trim() : null
+      try {
+        const refined = await refineCatalogEnhanceNotes({
+          catalogKind: target.kind,
+          title: target.title,
+          typeLabel: target.typeLabel,
+          userNotes: enhanceInstruction,
+          openaiKey,
+          geminiKey,
+        })
+        if (refined.trim()) enhanceInstruction = refined.trim()
+      } catch {
+        /* keep artist textarea only */
+      }
+
       if (useGemini && geminiKey) {
         const { imageBase64: b64, mimeType: mt } = await enhanceCatalogImageWithGemini({
           apiKey: geminiKey,
           sourceImageUrl: src,
-          userInstruction: typeof creativePrompt === 'string' ? creativePrompt : null,
+          userInstruction: enhanceInstruction,
           aspectRatio: target.kind === 'event' ? '16:9' : '3:4',
         })
         imageBase64 = b64
@@ -174,7 +194,7 @@ export default async function handler(
         const { imageBase64: b64, mimeType: mt } = await enhanceCatalogImageWithOpenAI({
           apiKey: openaiKey,
           sourceImageUrl: src,
-          userInstruction: typeof creativePrompt === 'string' ? creativePrompt : null,
+          userInstruction: enhanceInstruction,
           aspectRatio: target.kind === 'event' ? '16:9' : '3:4',
         })
         imageBase64 = b64
@@ -184,7 +204,24 @@ export default async function handler(
         return
       }
     } else {
-      const brief = typeof creativePrompt === 'string' ? creativePrompt : null
+      let brief: string | null =
+        typeof creativePrompt === 'string' && creativePrompt.trim() ? creativePrompt.trim() : null
+      if (brief) {
+        try {
+          const refined = await refineCatalogGenerationPrompt({
+            catalogKind: target.kind,
+            title: target.title,
+            typeLabel: target.typeLabel,
+            artistDescription: brief,
+            openaiKey,
+            geminiKey,
+          })
+          if (refined.trim()) brief = refined.trim()
+        } catch {
+          /* use raw description */
+        }
+      }
+
       if (useGemini && geminiKey) {
         const { imageBase64: b64, mimeType: mt } = await generateProductCoverWithGemini({
           apiKey: geminiKey,

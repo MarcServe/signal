@@ -6,7 +6,13 @@ import { apiUrl, getSession } from '../lib/api'
 import { fetchArtistBioFromWeb, polishArtistBioDraft } from '../lib/bioResearch'
 import { catalogCardImageUrl, catalogImagePayload, type CatalogKind } from '../lib/catalogImage'
 import { normalizePublicHandle, stripCitationMarkers } from '../lib/cleanBioText'
-import { buildHlsPlaylistUrl, getHlsBaseUrl, normalizeRtmpStreamKeyInput } from '../lib/hlsPlayback'
+import {
+  buildHlsPlaylistUrl,
+  getHlsBaseUrl,
+  normalizeRtmpStreamKeyInput,
+  resolveStreamPlaybackUrl,
+} from '../lib/hlsPlayback'
+import { HlsVideo } from '../components/HlsVideo'
 import { FanDiscoverSpotlight } from '../components/FanDiscoverSpotlight'
 
 const MUSIC_INTEGRATION_CARDS = [
@@ -87,7 +93,9 @@ export function Dashboard() {
   const [streamKeyDraft, setStreamKeyDraft] = useState('')
   const [togglingSignalLive, setTogglingSignalLive] = useState(false)
   const [goLiveNotice, setGoLiveNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
-  const [products, setProducts] = useState<{ id: string; title: string; image_url: string | null }[]>([])
+  const [products, setProducts] = useState<
+    { id: string; title: string; image_url: string | null; type: string; price_cents: number }[]
+  >([])
   const [catalogBusy, setCatalogBusy] = useState<{ kind: CatalogKind; id: string } | null>(null)
   const [catalogImageNotice, setCatalogImageNotice] = useState<string | null>(null)
   const catalogFileRef = useRef<HTMLInputElement>(null)
@@ -105,6 +113,7 @@ export function Dashboard() {
   const [addProductOpen, setAddProductOpen] = useState(false)
   const [newProductTitle, setNewProductTitle] = useState('')
   const [newProductPrice, setNewProductPrice] = useState('9.99')
+  const [newProductType, setNewProductType] = useState<'merch' | 'track' | 'ticket'>('track')
   const [addEventOpen, setAddEventOpen] = useState(false)
   const [newEventTitle, setNewEventTitle] = useState('')
   const [newEventVenue, setNewEventVenue] = useState('')
@@ -115,8 +124,9 @@ export function Dashboard() {
   const [eventFormError, setEventFormError] = useState<string | null>(null)
   const [tierFormError, setTierFormError] = useState<string | null>(null)
   const [productFormError, setProductFormError] = useState<string | null>(null)
-  const [payoutsSectionOpen, setPayoutsSectionOpen] = useState(true)
-  const [musicSectionOpen, setMusicSectionOpen] = useState(true)
+  const [payoutsSectionOpen, setPayoutsSectionOpen] = useState(false)
+  const [musicSectionOpen, setMusicSectionOpen] = useState(false)
+  const [goLiveSectionOpen, setGoLiveSectionOpen] = useState(false)
   const [backfillBusy, setBackfillBusy] = useState(false)
   const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null)
   const [backfillNotice, setBackfillNotice] = useState<string | null>(null)
@@ -145,7 +155,11 @@ export function Dashboard() {
     setMemberships((data ?? []) as typeof memberships)
   }
   const reloadProducts = async (id: string) => {
-    const { data } = await supabase.from('products').select('id, title, image_url').eq('artist_id', id).limit(40)
+    const { data } = await supabase
+      .from('products')
+      .select('id, title, image_url, type, price_cents')
+      .eq('artist_id', id)
+      .limit(40)
     setProducts((data ?? []) as typeof products)
   }
 
@@ -359,7 +373,12 @@ export function Dashboard() {
         setArtist(merged as typeof artist)
         if (data.id) {
           void refreshStreams(data.id)
-          supabase.from('products').select('id, title, image_url').eq('artist_id', data.id).limit(40).then(({ data: p }) => setProducts((p ?? []) as typeof products))
+          supabase
+            .from('products')
+            .select('id, title, image_url, type, price_cents')
+            .eq('artist_id', data.id)
+            .limit(40)
+            .then(({ data: p }) => setProducts((p ?? []) as typeof products))
           supabase
             .from('events')
             .select('id, title, starts_at, venue, image_url')
@@ -474,6 +493,174 @@ export function Dashboard() {
   /** OBS stream key: custom `stream_key` when set, otherwise stream row UUID (matches HLS /live/<key>/). */
   const rtmpSegment = broadcastStreamId ? streamKeyDraft.trim() || broadcastStreamId : ''
   const selectedBroadcastStream = broadcastStreamId ? streams.find((s) => s.id === broadcastStreamId) : undefined
+
+  const trackCatalog = products.filter((p) => p.type === 'track')
+  const merchAndTicketsCatalog = products.filter((p) => p.type === 'merch' || p.type === 'ticket')
+
+  type CatalogProductRow = (typeof products)[number]
+  function renderCatalogProductCard(p: CatalogProductRow) {
+    const pCardImg = catalogCardImageUrl(p.image_url, catalogPortrait)
+    const pCleanSource = p.image_url?.trim() || catalogPortrait
+    return (
+      <div
+        key={p.id}
+        className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
+      >
+        <div className="relative aspect-[3/4] bg-[var(--signal-silver-light)]/40">
+          {pCardImg ? (
+            <img src={pCardImg} alt="" className="absolute inset-0 h-full w-full object-contain object-center bg-[var(--signal-silver-light)]/30" />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <span className="text-[var(--signal-ink-muted)] text-sm text-center line-clamp-3" style={{ fontFamily: 'var(--font-body)' }}>
+                {p.title}
+              </span>
+            </div>
+          )}
+          {catalogBusy?.kind === 'product' && catalogBusy.id === p.id && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-[var(--signal-ink)]">
+              Working…
+            </div>
+          )}
+        </div>
+        <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium text-[var(--signal-ink)] truncate flex-1 min-w-0" title={p.title}>
+              {p.title}
+            </p>
+            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--signal-silver-light)]/50 text-[var(--signal-ink-muted)] shrink-0">
+              {p.type === 'track' ? 'Track' : p.type === 'ticket' ? 'Ticket' : 'Merch'}
+            </span>
+          </div>
+          <p className="text-xs text-[var(--signal-gold)]">${((p.price_cents ?? 0) / 100).toFixed(2)}</p>
+          <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
+            Creative direction (optional) — expanded by LLM for Generate / Clean
+          </label>
+          <textarea
+            value={catalogPrompts[`product:${p.id}`] ?? ''}
+            onChange={(e) => setCatalogPrompts((prev) => ({ ...prev, [`product:${p.id}`]: e.target.value }))}
+            placeholder="e.g. Black vinyl on marble, gold foil, moody club lighting…"
+            rows={2}
+            disabled={catalogBusy !== null}
+            className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={catalogBusy !== null}
+              onClick={() => {
+                pendingCatalogUpload.current = { kind: 'product', id: p.id }
+                catalogFileRef.current?.click()
+              }}
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50"
+            >
+              Upload
+            </button>
+            <button
+              type="button"
+              disabled={catalogBusy !== null || !artistId}
+              onClick={async () => {
+                if (!artistId) return
+                setCatalogImageNotice(null)
+                setCatalogBusy({ kind: 'product', id: p.id })
+                try {
+                  const session = await getSession()
+                  if (!session) {
+                    setCatalogImageNotice('Sign in again to generate.')
+                    return
+                  }
+                  const prompt = catalogPrompts[`product:${p.id}`]?.trim()
+                  const res = await fetch(apiUrl('/product-image-generate'), {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify(
+                      catalogImagePayload(artistId, 'product', p.id, {
+                        creative_prompt: prompt || undefined,
+                      })
+                    ),
+                  })
+                  const raw = await res.text()
+                  let body: { error?: string; image_url?: string } = {}
+                  try {
+                    if (raw.trim()) body = JSON.parse(raw) as typeof body
+                  } catch {
+                    /* ignore */
+                  }
+                  if (!res.ok) {
+                    setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                    return
+                  }
+                  await reloadProducts(artistId)
+                  setCatalogImageNotice('Image generated from your description.')
+                } catch {
+                  setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                } finally {
+                  setCatalogBusy(null)
+                }
+              }}
+              className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {catalogBusy?.kind === 'product' && catalogBusy.id === p.id ? '…' : 'Generate'}
+            </button>
+            {pCleanSource && (
+              <button
+                type="button"
+                disabled={catalogBusy !== null || !artistId}
+                onClick={async () => {
+                  if (!artistId || !pCleanSource) return
+                  setCatalogImageNotice(null)
+                  setCatalogBusy({ kind: 'product', id: p.id })
+                  try {
+                    const session = await getSession()
+                    if (!session) {
+                      setCatalogImageNotice('Sign in again.')
+                      return
+                    }
+                    const hint = catalogPrompts[`product:${p.id}`]?.trim()
+                    const res = await fetch(apiUrl('/product-image-generate'), {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`,
+                      },
+                      body: JSON.stringify(
+                        catalogImagePayload(artistId, 'product', p.id, {
+                          source_image_url: pCleanSource,
+                          creative_prompt: hint || undefined,
+                        })
+                      ),
+                    })
+                    const raw = await res.text()
+                    let body: { error?: string } = {}
+                    try {
+                      if (raw.trim()) body = JSON.parse(raw) as typeof body
+                    } catch {
+                      /* ignore */
+                    }
+                    if (!res.ok) {
+                      setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
+                      return
+                    }
+                    await reloadProducts(artistId)
+                    setCatalogImageNotice('Photo cleaned and standardized.')
+                  } catch {
+                    setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                  } finally {
+                    setCatalogBusy(null)
+                  }
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
+              >
+                Clean &amp; standardize
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[var(--signal-white)]">
@@ -735,11 +922,33 @@ export function Dashboard() {
           </div>
         )}
 
-        {/* Go live: RTMP + optional custom OBS key + HLS playback URL */}
+        {/* Go live: RTMP + optional custom OBS key + HLS playback URL — collapsed by default */}
         {artistId && (
-          <section className="mb-[var(--space-2xl)]">
-            <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Go live</h2>
-            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-4 space-y-4">
+          <details
+            className="group/golive mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
+            open={goLiveSectionOpen}
+            onToggle={(e) => setGoLiveSectionOpen(e.currentTarget.open)}
+          >
+            <summary
+              className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <span
+                  className="h-11 w-14 shrink-0 rounded-lg bg-gradient-to-br from-[var(--signal-ink)]/90 to-[var(--signal-gold)]/25 flex items-center justify-center shadow-inner"
+                  aria-hidden
+                >
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.7)]" />
+                </span>
+                <span className="truncate">Go live</span>
+              </span>
+              <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+                <span className="group-open/golive:hidden">Expand</span>
+                <span className="hidden group-open/golive:inline">Collapse</span>
+              </span>
+            </summary>
+            <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
+              <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-4 space-y-4 mt-3">
               {goLiveNotice && (
                 <p
                   className={`text-sm ${goLiveNotice.type === 'err' ? 'text-red-600' : 'text-[var(--signal-gold)]'}`}
@@ -1039,8 +1248,9 @@ export function Dashboard() {
               <p className="text-xs text-[var(--signal-silver)] pt-1 border-t border-[var(--signal-silver-light)]">
                 Stream from browser (coming soon).
               </p>
+              </div>
             </div>
-          </section>
+          </details>
         )}
 
         {/* Streams: image-first cards + camera auto-rotate */}
@@ -1052,15 +1262,34 @@ export function Dashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {streams.map((s) => (
+              {streams.map((s) => {
+                const playbackSrc = resolveStreamPlaybackUrl({
+                  id: s.id,
+                  playback_url: s.playback_url ?? null,
+                  stream_key: s.stream_key ?? null,
+                })
+                return (
                 <div
                   key={s.id}
                   className="group rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] transition-shadow hover:shadow-md"
                 >
-                  <div className="aspect-[3/4] bg-[var(--signal-silver-light)]/50 flex items-center justify-center">
-                    <span className="text-[var(--signal-silver)] text-4xl" style={{ fontFamily: 'var(--font-display)' }}>
-                      {(s.title ?? 'S').charAt(0)}
-                    </span>
+                  <div className="relative aspect-[3/4] bg-black overflow-hidden">
+                    {playbackSrc ? (
+                      <HlsVideo
+                        src={playbackSrc}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        autoPlay
+                        muted
+                        playsInline
+                        aria-label={`Preview: ${s.title ?? 'stream'}`}
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center bg-[var(--signal-silver-light)]/50">
+                        <span className="text-[var(--signal-silver)] text-4xl" style={{ fontFamily: 'var(--font-display)' }}>
+                          {(s.title ?? 'S').charAt(0)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="p-3 flex items-center justify-between">
                     <span className="text-sm text-[var(--signal-ink)] truncate">{s.title ?? 'Untitled'}</span>
@@ -1069,7 +1298,11 @@ export function Dashboard() {
                         <input
                           type="checkbox"
                           checked={!!s.camera_auto_rotate}
-                          onChange={(e) => supabase.from('streams').update({ camera_auto_rotate: e.target.checked }).eq('id', s.id)}
+                          onChange={async (e) => {
+                            const checked = e.target.checked
+                            await supabase.from('streams').update({ camera_auto_rotate: checked }).eq('id', s.id)
+                            if (artistId) await refreshStreams(artistId)
+                          }}
                           className="rounded"
                         />
                         Auto camera
@@ -1080,7 +1313,8 @@ export function Dashboard() {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </section>
@@ -1217,7 +1451,7 @@ export function Dashboard() {
                       {ev.venue ? ` · ${ev.venue}` : ''}
                     </p>
                     <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Describe the look you want (optional)
+                      Creative direction (optional) — expanded by LLM for Generate / Clean
                     </label>
                     <textarea
                       value={catalogPrompts[`event:${ev.id}`] ?? ''}
@@ -1462,7 +1696,7 @@ export function Dashboard() {
                     <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{m.title}</p>
                     <p className="text-xs text-[var(--signal-gold)]">${(m.price_cents / 100).toFixed(2)}/mo</p>
                     <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Describe the image you want (optional)
+                      Creative direction (optional) — expanded by LLM for Generate / Clean
                     </label>
                     <textarea
                       value={catalogPrompts[`membership:${m.id}`] ?? ''}
@@ -1596,10 +1830,19 @@ export function Dashboard() {
           ) : null}
         </section>
 
-        {/* Products: visual cards + Add product */}
+        {/* Catalog: tracks (live DJ shop) + merch & tickets */}
         <section className="mb-[var(--space-2xl)]">
-          <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h2 className="text-lg font-medium text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-display)' }}>Products</h2>
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-medium text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-display)' }}>
+                Catalog
+              </h2>
+              <p className="text-xs text-[var(--signal-ink-muted)] mt-1 max-w-xl" style={{ fontFamily: 'var(--font-body)' }}>
+                <strong className="text-[var(--signal-ink)]">Tracks</strong> are what fans buy from{' '}
+                <strong className="text-[var(--signal-ink)]">More → Track</strong> while you&apos;re live. Add merch and event tickets
+                for your shop too.
+              </p>
+            </div>
             <button
               type="button"
               disabled={!artistId || backfillBusy}
@@ -1607,14 +1850,24 @@ export function Dashboard() {
                 if (!artistId) return
                 void backfillMissingCatalogImages(artistId)
               }}
-              className="px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              className="shrink-0 px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               {backfillBusy ? 'Backfilling…' : 'Backfill missing covers'}
             </button>
           </div>
           <p className="text-xs text-[var(--signal-ink-muted)] -mt-2 mb-4" style={{ fontFamily: 'var(--font-body)' }}>
-            Generates missing track/merch/product, membership tier, and event images (best-effort). Limited to reduce cost.
+            AI-generated art for tracks, merch, tiers, and events (best-effort). Limited to reduce cost.
           </p>
+          {import.meta.env.DEV && (
+            <p className="text-xs text-amber-900/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-3 py-2 mb-4" style={{ fontFamily: 'var(--font-body)' }}>
+              <strong className="font-medium">Local dev:</strong> image generation calls <code className="text-[10px] px-1 rounded bg-amber-500/15">/api/product-image-generate</code> on port{' '}
+              <strong>3000</strong>. Run <code className="text-[10px] px-1 rounded bg-amber-500/15">npm run dev:all</code> or{' '}
+              <code className="text-[10px] px-1 rounded bg-amber-500/15">npm run dev:vercel</code> in a second terminal, and complete{' '}
+              <code className="text-[10px] px-1 rounded bg-amber-500/15">npm run vercel:link</code> the first time. Ensure{' '}
+              <code className="text-[10px] px-1 rounded bg-amber-500/15">OPENAI_API_KEY</code> or <code className="text-[10px] px-1 rounded bg-amber-500/15">GEMINI_API_KEY</code> is in{' '}
+              <code className="text-[10px] px-1 rounded bg-amber-500/15">.env</code>.
+            </p>
+          )}
           {backfillProgress && (
             <p className="text-xs text-[var(--signal-ink-muted)] mb-3" style={{ fontFamily: 'var(--font-body)' }}>
               {backfillProgress.done}/{backfillProgress.total} done
@@ -1675,7 +1928,29 @@ export function Dashboard() {
                   {productFormError}
                 </p>
               )}
-              <input type="text" placeholder="Product title" value={newProductTitle} onChange={(e) => setNewProductTitle(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
+              <label className="block text-xs font-medium text-[var(--signal-ink-muted)] mb-1">Type</label>
+              <select
+                value={newProductType}
+                onChange={(e) => setNewProductType(e.target.value as 'merch' | 'track' | 'ticket')}
+                className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2 text-[var(--signal-ink)] bg-[var(--signal-white-pure)]"
+              >
+                <option value="track">Track — sold during live (More → Track)</option>
+                <option value="merch">Merch / product</option>
+                <option value="ticket">Ticket / show (More → Ticket)</option>
+              </select>
+              <input
+                type="text"
+                placeholder={
+                  newProductType === 'track'
+                    ? 'Track title (e.g. Midnight Drive — Club Edit)'
+                    : newProductType === 'ticket'
+                      ? 'Ticket name (e.g. Warehouse NYE)'
+                      : 'Product title'
+                }
+                value={newProductTitle}
+                onChange={(e) => setNewProductTitle(e.target.value)}
+                className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2"
+              />
               <input type="text" placeholder="Price (e.g. 9.99)" value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
               <div className="flex gap-2">
                 <button
@@ -1686,7 +1961,12 @@ export function Dashboard() {
                     const cents = Math.round(parseFloat(newProductPrice) * 100) || 0
                     const { error } = await supabase
                       .from('products')
-                      .insert({ artist_id: artistId, type: 'merch', title: newProductTitle || 'Untitled', price_cents: cents })
+                      .insert({
+                        artist_id: artistId,
+                        type: newProductType,
+                        title: newProductTitle || 'Untitled',
+                        price_cents: cents,
+                      })
                     if (error) {
                       setProductFormError(error.message)
                       return
@@ -1694,6 +1974,7 @@ export function Dashboard() {
                     await reloadProducts(artistId)
                     setNewProductTitle('')
                     setNewProductPrice('9.99')
+                    setNewProductType('track')
                     setAddProductOpen(false)
                   }}
                   className="px-3 py-1.5 rounded-lg bg-[var(--signal-gold)] text-white text-sm"
@@ -1714,183 +1995,84 @@ export function Dashboard() {
             </div>
           )}
           {!addProductOpen && artistId && (
-            <button type="button" onClick={() => setAddProductOpen(true)} className="mb-4 text-sm text-[var(--signal-gold)] hover:opacity-80">+ Add product</button>
+            <div className="mb-6 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setNewProductType('track')
+                  setProductFormError(null)
+                  setAddProductOpen(true)
+                }}
+                className="px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90"
+              >
+                + Add track
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewProductType('merch')
+                  setProductFormError(null)
+                  setAddProductOpen(true)
+                }}
+                className="px-4 py-2 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm font-medium hover:bg-[var(--signal-silver-light)]/20"
+              >
+                + Add merch
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewProductType('ticket')
+                  setProductFormError(null)
+                  setAddProductOpen(true)
+                }}
+                className="px-4 py-2 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm font-medium hover:bg-[var(--signal-silver-light)]/20"
+              >
+                + Add ticket
+              </button>
+            </div>
           )}
           {catalogImageNotice && (
             <p className="mb-3 text-sm text-[var(--signal-ink-muted)]" role="status">
               {catalogImageNotice}
             </p>
           )}
-          {products.length === 0 && !addProductOpen ? (
-            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm">
-              No products yet. Add one above or connect Bandcamp/Shopify to sync.
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="col-span-full">
+              <h3 className="text-base font-medium text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-display)' }}>
+                Tracks
+              </h3>
+              <p className="text-xs text-[var(--signal-ink-muted)] mt-1 mb-3">
+                Your releases, edits, and singles — fans tap <strong className="text-[var(--signal-ink)]">More → Track</strong> on your
+                live page to buy.
+              </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {products.map((p) => {
-                const pCardImg = catalogCardImageUrl(p.image_url, catalogPortrait)
-                const pCleanSource = p.image_url?.trim() || catalogPortrait
-                return (
-                <div
-                  key={p.id}
-                  className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] flex flex-col"
-                >
-                  <div className="relative aspect-[3/4] bg-[var(--signal-silver-light)]/40">
-                    {pCardImg ? (
-                      <img src={pCardImg} alt="" className="absolute inset-0 h-full w-full object-contain object-center bg-[var(--signal-silver-light)]/30" />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center p-4">
-                        <span className="text-[var(--signal-ink-muted)] text-sm text-center line-clamp-3" style={{ fontFamily: 'var(--font-body)' }}>
-                          {p.title}
-                        </span>
-                      </div>
-                    )}
-                    {catalogBusy?.kind === 'product' && catalogBusy.id === p.id && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-[var(--signal-ink)]">
-                        Working…
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
-                    <p className="text-sm font-medium text-[var(--signal-ink)] truncate" title={p.title}>
-                      {p.title}
-                    </p>
-                    <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Describe the image you want (optional)
-                    </label>
-                    <textarea
-                      value={catalogPrompts[`product:${p.id}`] ?? ''}
-                      onChange={(e) =>
-                        setCatalogPrompts((prev) => ({ ...prev, [`product:${p.id}`]: e.target.value }))
-                      }
-                      placeholder="e.g. Black vinyl on marble, gold foil, moody club lighting…"
-                      rows={2}
-                      disabled={catalogBusy !== null}
-                      className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={catalogBusy !== null}
-                        onClick={() => {
-                          pendingCatalogUpload.current = { kind: 'product', id: p.id }
-                          catalogFileRef.current?.click()
-                        }}
-                        className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50"
-                      >
-                        Upload
-                      </button>
-                      <button
-                        type="button"
-                        disabled={catalogBusy !== null || !artistId}
-                        onClick={async () => {
-                          if (!artistId) return
-                          setCatalogImageNotice(null)
-                          setCatalogBusy({ kind: 'product', id: p.id })
-                          try {
-                            const session = await getSession()
-                            if (!session) {
-                              setCatalogImageNotice('Sign in again to generate.')
-                              return
-                            }
-                            const prompt = catalogPrompts[`product:${p.id}`]?.trim()
-                            const res = await fetch(apiUrl('/product-image-generate'), {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${session.access_token}`,
-                              },
-                              body: JSON.stringify(
-                                catalogImagePayload(artistId, 'product', p.id, {
-                                  creative_prompt: prompt || undefined,
-                                })
-                              ),
-                            })
-                            const raw = await res.text()
-                            let body: { error?: string; image_url?: string } = {}
-                            try {
-                              if (raw.trim()) body = JSON.parse(raw) as typeof body
-                            } catch {
-                              /* ignore */
-                            }
-                            if (!res.ok) {
-                              setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
-                              return
-                            }
-                            await reloadProducts(artistId)
-                            setCatalogImageNotice('Image generated from your description.')
-                          } catch {
-                            setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                          } finally {
-                            setCatalogBusy(null)
-                          }
-                        }}
-                        className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
-                      >
-                        {catalogBusy?.kind === 'product' && catalogBusy.id === p.id ? '…' : 'Generate'}
-                      </button>
-                      {pCleanSource && (
-                        <button
-                          type="button"
-                          disabled={catalogBusy !== null || !artistId}
-                          onClick={async () => {
-                            if (!artistId || !pCleanSource) return
-                            setCatalogImageNotice(null)
-                            setCatalogBusy({ kind: 'product', id: p.id })
-                            try {
-                              const session = await getSession()
-                              if (!session) {
-                                setCatalogImageNotice('Sign in again.')
-                                return
-                              }
-                              const hint = catalogPrompts[`product:${p.id}`]?.trim()
-                              const res = await fetch(apiUrl('/product-image-generate'), {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  Authorization: `Bearer ${session.access_token}`,
-                                },
-                                body: JSON.stringify(
-                                  catalogImagePayload(artistId, 'product', p.id, {
-                                    source_image_url: pCleanSource,
-                                    creative_prompt: hint || undefined,
-                                  })
-                                ),
-                              })
-                              const raw = await res.text()
-                              let body: { error?: string } = {}
-                              try {
-                                if (raw.trim()) body = JSON.parse(raw) as typeof body
-                              } catch {
-                                /* ignore */
-                              }
-                              if (!res.ok) {
-                                setCatalogImageNotice(body.error || raw.slice(0, 200) || `HTTP ${res.status}`)
-                                return
-                              }
-                              await reloadProducts(artistId)
-                              setCatalogImageNotice('Photo cleaned and standardized.')
-                            } catch {
-                              setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                            } finally {
-                              setCatalogBusy(null)
-                            }
-                          }}
-                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
-                        >
-                          Clean &amp; standardize
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                )
-              })}
+            {trackCatalog.length === 0 && !addProductOpen && artistId ? (
+              <div className="col-span-full rounded-[var(--radius-card)] border border-dashed border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-6 text-center text-sm text-[var(--signal-ink-muted)] mb-2">
+                No tracks yet. Use <strong className="text-[var(--signal-ink)]">+ Add track</strong> to list music for sale during streams.
+              </div>
+            ) : null}
+            {trackCatalog.map((p) => renderCatalogProductCard(p))}
+
+            <div className="col-span-full mt-8">
+              <h3 className="text-base font-medium text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-display)' }}>
+                Merch &amp; tickets
+              </h3>
+              <p className="text-xs text-[var(--signal-ink-muted)] mt-1 mb-3">
+                Tickets show under <strong className="text-[var(--signal-ink)]">More → Ticket</strong> when you&apos;re live. Merch fills
+                out your shop and feed when synced.
+              </p>
             </div>
-          )}
+            {merchAndTicketsCatalog.length === 0 && !addProductOpen && artistId ? (
+              <div className="col-span-full rounded-[var(--radius-card)] border border-dashed border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-6 text-center text-sm text-[var(--signal-ink-muted)]">
+                No merch or tickets yet. Use <strong className="text-[var(--signal-ink)]">+ Add merch</strong> or{' '}
+                <strong className="text-[var(--signal-ink)]">+ Add ticket</strong>.
+              </div>
+            ) : null}
+            {merchAndTicketsCatalog.map((p) => renderCatalogProductCard(p))}
+          </div>
         </section>
 
-        {/* Payouts — open by default so Stripe connect is visible */}
+        {/* Payouts — collapsed by default */}
         {artistId && (
           <details
             className="group/payouts mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
@@ -1901,7 +2083,15 @@ export function Dashboard() {
               className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
               style={{ fontFamily: 'var(--font-display)' }}
             >
-              <span>Payouts</span>
+              <span className="flex items-center gap-3 min-w-0">
+                <span
+                  className="h-11 w-14 shrink-0 rounded-lg bg-[var(--signal-silver-light)]/35 flex items-center justify-center border border-[var(--signal-silver-light)]/60"
+                  aria-hidden
+                >
+                  <img src="https://cdn.simpleicons.org/stripe/635BFF" alt="" className="w-7 h-7 object-contain opacity-90" loading="lazy" />
+                </span>
+                <span className="truncate">Payouts</span>
+              </span>
               <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
                 <span className="group-open/payouts:hidden">Expand</span>
                 <span className="hidden group-open/payouts:inline">Collapse</span>
@@ -1930,7 +2120,7 @@ export function Dashboard() {
           </details>
         )}
 
-        {/* Connect your music — open by default */}
+        {/* Connect your music — collapsed by default */}
         <details
           className="group/music mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
           open={musicSectionOpen}
@@ -1940,7 +2130,15 @@ export function Dashboard() {
             className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            <span>Connect your music</span>
+            <span className="flex items-center gap-3 min-w-0">
+              <span
+                className="h-11 w-14 shrink-0 rounded-lg bg-[var(--signal-silver-light)]/35 flex items-center justify-center border border-[var(--signal-silver-light)]/60 overflow-hidden"
+                aria-hidden
+              >
+                <img src="https://cdn.simpleicons.org/spotify/1DB954" alt="" className="w-8 h-8 object-contain" loading="lazy" />
+              </span>
+              <span className="truncate">Connect your music</span>
+            </span>
             <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
               <span className="group-open/music:hidden">Expand</span>
               <span className="hidden group-open/music:inline">Collapse</span>

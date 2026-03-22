@@ -65,31 +65,41 @@ For full Lovable context (copy-paste into Lovable.dev), see [CONTEXT.md](CONTEXT
 
 4. **Run**
 
-   **Frontend only** (no `/api` — you’ll get **HTTP 404** on Gemini enhance, bio research, Stripe, etc.):
+   **`vercel dev` must not run `vercel dev` again.** The default `npm run dev` script is **`vite` only** (`devCommand` in `vercel.json`), so the CLI won’t hit [recursive invocation](https://vercel.link/recursive-invocation-of-commands).
+
+   **Vite + local `/api` on :5173** (catalog images, Stripe, etc.):
+
+   ```bash
+   npm run dev:all
+   ```
+
+   Or **two terminals**: `npm run dev:vercel`, then `npm run dev` — Vite proxies `/api` to port 3000.
+
+   **Vercel dev only** (CLI starts Vite as the dev command; use the URL printed, often [http://localhost:3000](http://localhost:3000)):
+
+   ```bash
+   npm run dev:vercel
+   ```
+
+   Set `SUPABASE_SERVICE_ROLE_KEY`, **`OPENAI_API_KEY`** and/or **`GEMINI_API_KEY`**, etc. in `.env`. If the API uses another port, set `VITE_API_PROXY_TARGET=http://127.0.0.1:<port>`.
+
+   **Frontend only** (no `/api`):
 
    ```bash
    npm run dev
    ```
 
-   Open [http://localhost:5173](http://localhost:5173).
+   **First time using local `/api`:** run **`npm run vercel:link`** (or `npx vercel link`) once in the repo root. Pick your Vercel team and link to an existing project or create one — this writes `.vercel/` (gitignored) so `vercel dev` stops asking on every run. Then start `npm run dev:vercel` or `npm run dev:all` and wait until the terminal shows the server **ready** (e.g. listening on `3000`) before using [http://localhost:5173](http://localhost:5173).
 
-   **Frontend + serverless `/api/*` locally** (Gemini avatar enhance, `avatar-generate`, etc.):
+   **`vercel dev` recursion error:** the repo’s `npm run dev` is **`vite` only** and `vercel.json` sets **`devCommand`: `vite`**. If you still see recursion, open the project on [vercel.com](https://vercel.com) → **Settings → General** and set **Development Command** to `vite` (not `npm run dev` if that pointed at an old script).
 
-   1. Terminal A — Vercel dev (serves `api/` on **port 3000**; loads `.env`):
+   **Project name must be lowercase (400):** `vercel.json` sets **`"name": "signal"`** so new links don’t inherit an invalid name from a capitalized folder (e.g. `Signal`). If you already have a broken `.vercel` link, remove the `.vercel` folder and run **`npm run vercel:link`** again.
 
-      ```bash
-      npm run dev:vercel
-      ```
+   **If “Generate” / catalog images do nothing or “Failed to fetch”:**
 
-   2. Terminal B — Vite (still use **5173** in the browser; `/api` is **proxied** to 3000):
-
-      ```bash
-      npm run dev
-      ```
-
-   Set `SUPABASE_SERVICE_ROLE_KEY`, **`OPENAI_API_KEY`** (portrait + catalog images) and/or `GEMINI_API_KEY`, etc. in `.env` for routes that need them. If Vercel listens on another port, set `VITE_API_PROXY_TARGET=http://127.0.0.1:<port>` in `.env`.
-
-   **Alternative:** run only `npm run dev:vercel` and open the URL Vercel prints (often [http://localhost:3000](http://localhost:3000)) instead of 5173.
+   1. **API running** — With the app on **:5173**, **`vercel dev` must be up on :3000** (second terminal or `npm run dev:all`). If the CLI is stuck on questions (“Which scope…”), finish that flow or run `npm run vercel:link` first.
+   2. **Keys** — `.env` needs **`OPENAI_API_KEY`** and/or **`GEMINI_API_KEY`** plus **`SUPABASE_SERVICE_ROLE_KEY`** for server routes.
+   3. **Signed in** — Generation sends your Supabase session token; refresh login if you see 401.
 
 ## Build
 
@@ -116,7 +126,7 @@ Serverless routes in `api/` are ready for production. Set the env vars in `.env.
 | `/api/stripe-checkout` | POST | Create Stripe Checkout Session (purchase or subscription) |
 | `/api/stripe-webhook` | POST | Stripe webhook (configure in Stripe Dashboard) |
 | `/api/avatar-generate` | POST | Store avatar; `mode: "enhance"` uses **OpenAI** (DALL·E 2 edits) and/or **Gemini** — set `OPENAI_API_KEY` and/or `GEMINI_API_KEY`. Server picks OpenAI first when both exist unless `PREFERRED_AVATAR_ENHANCE_PROVIDER=gemini`. Optional `provider` in body overrides. |
-| `/api/product-image-generate` | POST | Catalog images (one target): `{ artist_id, product_id \| membership_id \| event_id, creative_prompt?, source_image_url? }`. Uses **OpenAI** when `OPENAI_API_KEY` is set (default if both Gemini + OpenAI are set), else **Gemini**. Set `PREFERRED_CATALOG_IMAGE_PROVIDER=gemini` to prefer Gemini when both keys exist. Updates `image_url`; storage under `product-covers/`, `membership-covers/`, `event-covers/`. |
+| `/api/product-image-generate` | POST | Catalog images (one target): `{ artist_id, product_id \| membership_id \| event_id, creative_prompt?, source_image_url? }`. **LLM** (GPT via `OPENAI_API_KEY`, else Gemini text + `GEMINI_API_KEY`) refines `creative_prompt` for **Generate** and tailors notes for **Clean & standardize** (`source_image_url`). Image model: **OpenAI** when `OPENAI_API_KEY` is set (default if both keys exist), else **Gemini**. Optional `CATALOG_LLM_MODEL`, `GEMINI_TEXT_MODEL`. |
 | `/api/artist-bio` | POST | Body `{ "action": "research", "query": "…" }` (Perplexity / Wikipedia) or `{ "action": "polish", "draft": "…", "display_name"?: "…" }` (Gemini). Requires `Authorization: Bearer` (Supabase JWT). Env: `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, optional `GEMINI_TEXT_MODEL`. |
 | `/api/avatar-tts` | POST | TTS for avatar (ElevenLabs when key set) |
 | `/api/sync` | GET | Health: `{ ok: true, service: "signal-api" }` |

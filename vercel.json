@@ -1,5 +1,7 @@
 {
+  "name": "signal",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "framework": "vite"
+  "framework": "vite",
+  "devCommand": "vite"
 }

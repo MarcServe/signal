@@ -15,6 +15,18 @@ const FREE_VIEW_MINUTES = 20
 
 type StreamChatRow = { id: string; display_name: string | null; body: string; created_at: string }
 
+type LiveShopProduct = { id: string; title: string; price_cents: number | null; type: string }
+
+type LivePurchase = {
+  title: string
+  type: CheckoutType
+  itemId?: string
+  amountCents: number
+  membershipId?: string
+}
+
+type CommerceBrowse = null | 'tracks' | 'tickets' | 'memberships'
+
 function IconHeart({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -54,7 +66,10 @@ export function LiveView() {
   const [showPaywall, setShowPaywall] = useState(false)
   const [watchStart, setWatchStart] = useState<number | null>(null)
   const [showPurchaseDrawer, setShowPurchaseDrawer] = useState(false)
-  const [purchaseProduct, setPurchaseProduct] = useState<{ title: string; type: string } | null>(null)
+  const [purchaseProduct, setPurchaseProduct] = useState<LivePurchase | null>(null)
+  const [liveTracks, setLiveTracks] = useState<LiveShopProduct[]>([])
+  const [liveTickets, setLiveTickets] = useState<LiveShopProduct[]>([])
+  const [commerceBrowse, setCommerceBrowse] = useState<CommerceBrowse>(null)
   const [showTipDrawer, setShowTipDrawer] = useState(false)
   const [tipAmountCents, setTipAmountCents] = useState(500)
   const [tipSending, setTipSending] = useState(false)
@@ -209,6 +224,24 @@ export function LiveView() {
   useEffect(() => {
     if (!stream?.artist_id || stream.artist_id.startsWith('demo-')) return
     supabase.from('memberships').select('id, title, price_cents').eq('artist_id', stream.artist_id).then(({ data }) => setMemberships((data ?? []) as typeof memberships))
+  }, [stream?.artist_id])
+
+  useEffect(() => {
+    if (!stream?.artist_id || stream.artist_id.startsWith('demo-')) {
+      setLiveTracks([])
+      setLiveTickets([])
+      return
+    }
+    void supabase
+      .from('products')
+      .select('id, title, price_cents, type')
+      .eq('artist_id', stream.artist_id)
+      .in('type', ['track', 'ticket'])
+      .then(({ data }) => {
+        const rows = (data ?? []) as LiveShopProduct[]
+        setLiveTracks(rows.filter((r) => r.type === 'track'))
+        setLiveTickets(rows.filter((r) => r.type === 'ticket'))
+      })
   }, [stream?.artist_id])
 
   useEffect(() => {
@@ -466,10 +499,199 @@ export function LiveView() {
             <div className="grid grid-cols-2 gap-2">
               <button type="button" onClick={() => { setShowOverlaySheet(false); setShowTipDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Tip</button>
               <button type="button" onClick={() => { setShowOverlaySheet(false); setShowShareSheet(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Share</button>
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Track', type: 'track' }); setShowPurchaseDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Track</button>
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Ticket', type: 'ticket' }); setShowPurchaseDrawer(true); }} className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide">Ticket</button>
-              <button type="button" onClick={() => { setShowOverlaySheet(false); setPurchaseProduct({ title: 'Membership', type: 'membership' }); setShowPurchaseDrawer(true); }} className="col-span-2 py-3 rounded-xl border border-[var(--signal-ink)] bg-[var(--signal-ink)] text-white text-sm font-medium tracking-wide">Membership</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverlaySheet(false)
+                  if (liveTracks.length === 0) {
+                    setCommerceBrowse('tracks')
+                    return
+                  }
+                  if (liveTracks.length === 1) {
+                    const t = liveTracks[0]
+                    setPurchaseProduct({
+                      title: t.title,
+                      type: 'track',
+                      itemId: t.id,
+                      amountCents: t.price_cents ?? 999,
+                    })
+                    setShowPurchaseDrawer(true)
+                    return
+                  }
+                  setCommerceBrowse('tracks')
+                }}
+                className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide"
+              >
+                Track{liveTracks.length > 0 ? ` (${liveTracks.length})` : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverlaySheet(false)
+                  if (liveTickets.length === 0) {
+                    setCommerceBrowse('tickets')
+                    return
+                  }
+                  if (liveTickets.length === 1) {
+                    const t = liveTickets[0]
+                    setPurchaseProduct({
+                      title: t.title,
+                      type: 'ticket',
+                      itemId: t.id,
+                      amountCents: t.price_cents ?? 999,
+                    })
+                    setShowPurchaseDrawer(true)
+                    return
+                  }
+                  setCommerceBrowse('tickets')
+                }}
+                className="py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] text-sm tracking-wide"
+              >
+                Ticket{liveTickets.length > 0 ? ` (${liveTickets.length})` : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverlaySheet(false)
+                  if (memberships.length === 0) {
+                    setAvatarMessage('No membership tiers are available yet.')
+                    setTimeout(() => setAvatarMessage(null), 4000)
+                    return
+                  }
+                  if (memberships.length === 1) {
+                    const m = memberships[0]
+                    setPurchaseProduct({
+                      title: m.title,
+                      type: 'membership',
+                      membershipId: m.id,
+                      amountCents: m.price_cents ?? 999,
+                    })
+                    setShowPurchaseDrawer(true)
+                    return
+                  }
+                  setCommerceBrowse('memberships')
+                }}
+                className="col-span-2 py-3 rounded-xl border border-[var(--signal-ink)] bg-[var(--signal-ink)] text-white text-sm font-medium tracking-wide"
+              >
+                Membership{memberships.length > 1 ? ` (${memberships.length})` : ''}
+              </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pick a track / ticket / tier (from Studio catalog) */}
+      {commerceBrowse && stream && (
+        <div
+          className="absolute inset-0 z-50 flex items-end justify-center bg-black/50"
+          onClick={() => setCommerceBrowse(null)}
+        >
+          <div
+            className="bg-[var(--signal-white-pure)] rounded-t-2xl w-full max-w-md max-h-[min(70vh,520px)] overflow-y-auto p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-sm font-medium text-[var(--signal-ink)]">
+                {commerceBrowse === 'tracks' ? 'Tracks' : commerceBrowse === 'tickets' ? 'Tickets' : 'Membership'}
+              </span>
+              <button type="button" onClick={() => setCommerceBrowse(null)} className="text-[var(--signal-ink-muted)]">
+                ✕
+              </button>
+            </div>
+            {commerceBrowse === 'tracks' &&
+              (liveTracks.length === 0 ? (
+                <p className="text-sm text-[var(--signal-ink-muted)] py-2">
+                  No tracks in the shop yet. Add products in Studio → Products and set type to <strong className="text-[var(--signal-ink)]">Track</strong>.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {liveTracks.map((t) => (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        className="w-full text-left py-3 px-3 rounded-xl border border-[var(--signal-silver-light)] hover:bg-[var(--signal-silver-light)]/20 flex justify-between gap-2 items-center"
+                        onClick={() => {
+                          setPurchaseProduct({
+                            title: t.title,
+                            type: 'track',
+                            itemId: t.id,
+                            amountCents: t.price_cents ?? 999,
+                          })
+                          setShowPurchaseDrawer(true)
+                          setCommerceBrowse(null)
+                        }}
+                      >
+                        <span className="text-sm font-medium text-[var(--signal-ink)] truncate">{t.title}</span>
+                        <span className="text-sm text-[var(--signal-gold)] shrink-0">
+                          ${((t.price_cents ?? 0) / 100).toFixed(2)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ))}
+            {commerceBrowse === 'tickets' &&
+              (liveTickets.length === 0 ? (
+                <p className="text-sm text-[var(--signal-ink-muted)] py-2">
+                  No tickets listed yet. Add products in Studio → Products and set type to <strong className="text-[var(--signal-ink)]">Ticket</strong>.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {liveTickets.map((t) => (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        className="w-full text-left py-3 px-3 rounded-xl border border-[var(--signal-silver-light)] hover:bg-[var(--signal-silver-light)]/20 flex justify-between gap-2 items-center"
+                        onClick={() => {
+                          setPurchaseProduct({
+                            title: t.title,
+                            type: 'ticket',
+                            itemId: t.id,
+                            amountCents: t.price_cents ?? 999,
+                          })
+                          setShowPurchaseDrawer(true)
+                          setCommerceBrowse(null)
+                        }}
+                      >
+                        <span className="text-sm font-medium text-[var(--signal-ink)] truncate">{t.title}</span>
+                        <span className="text-sm text-[var(--signal-gold)] shrink-0">
+                          ${((t.price_cents ?? 0) / 100).toFixed(2)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ))}
+            {commerceBrowse === 'memberships' &&
+              (memberships.length === 0 ? (
+                <p className="text-sm text-[var(--signal-ink-muted)] py-2">No tiers available.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {memberships.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        className="w-full text-left py-3 px-3 rounded-xl border border-[var(--signal-silver-light)] hover:bg-[var(--signal-silver-light)]/20 flex justify-between gap-2 items-center"
+                        onClick={() => {
+                          setPurchaseProduct({
+                            title: m.title,
+                            type: 'membership',
+                            membershipId: m.id,
+                            amountCents: m.price_cents ?? 999,
+                          })
+                          setShowPurchaseDrawer(true)
+                          setCommerceBrowse(null)
+                        }}
+                      >
+                        <span className="text-sm font-medium text-[var(--signal-ink)] truncate">{m.title}</span>
+                        <span className="text-sm text-[var(--signal-gold)] shrink-0">
+                          ${((m.price_cents ?? 0) / 100).toFixed(2)}/mo
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ))}
           </div>
         </div>
       )}
@@ -533,14 +755,37 @@ export function LiveView() {
             </p>
             <button
               type="button"
-              onClick={() => { setShowPaywall(false); setPurchaseProduct({ title: 'Subscribe', type: 'membership' }); setShowPurchaseDrawer(true); }}
+              onClick={() => {
+                setShowPaywall(false)
+                if (memberships.length === 0) {
+                  setAvatarMessage('No membership tiers are available yet.')
+                  setTimeout(() => setAvatarMessage(null), 4000)
+                  return
+                }
+                if (memberships.length === 1) {
+                  const m = memberships[0]
+                  setPurchaseProduct({
+                    title: m.title,
+                    type: 'membership',
+                    membershipId: m.id,
+                    amountCents: m.price_cents ?? 999,
+                  })
+                  setShowPurchaseDrawer(true)
+                  return
+                }
+                setCommerceBrowse('memberships')
+              }}
               className="w-full py-3 rounded-xl bg-[var(--signal-gold)] text-white font-medium mb-2"
             >
               Subscribe — monthly access
             </button>
             <button
               type="button"
-              onClick={() => { setShowPaywall(false); setPurchaseProduct({ title: 'Pay per view', type: 'ppv' }); setShowPurchaseDrawer(true); }}
+              onClick={() => {
+                setShowPaywall(false)
+                setPurchaseProduct({ title: 'Pay per view', type: 'ppv', amountCents: 499 })
+                setShowPurchaseDrawer(true)
+              }}
               className="w-full py-3 rounded-xl border border-[var(--signal-silver-light)] text-[var(--signal-ink)] font-medium mb-2"
             >
               Pay per view — watch this stream
@@ -625,8 +870,9 @@ export function LiveView() {
           title={purchaseProduct?.title ?? 'Complete purchase'}
           type={(purchaseProduct?.type as CheckoutType) ?? 'track'}
           artistId={stream.artist_id}
-          membershipId={purchaseProduct?.type === 'membership' ? memberships[0]?.id : undefined}
-          amountCents={purchaseProduct?.type === 'membership' ? memberships[0]?.price_cents : 999}
+          itemId={purchaseProduct?.itemId}
+          membershipId={purchaseProduct?.membershipId}
+          amountCents={purchaseProduct?.amountCents ?? 999}
           onSuccess={() => {
             setAvatarMessage('Thanks for your purchase!')
             setTimeout(() => setAvatarMessage(null), 4000)

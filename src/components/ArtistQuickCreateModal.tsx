@@ -45,6 +45,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
   // Product
   const [productTitle, setProductTitle] = useState('')
   const [productPrice, setProductPrice] = useState('9.99')
+  const [productType, setProductType] = useState<'merch' | 'track' | 'ticket'>('merch')
   // Event
   const [eventTitle, setEventTitle] = useState('')
   const [eventVenue, setEventVenue] = useState('')
@@ -63,6 +64,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
     setCoverUrl(null)
     setImageBusy(false)
     setTab('product')
+    setProductType('merch')
     if (!user?.id) {
       setArtistId(null)
       return
@@ -112,6 +114,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
   const resetProduct = () => {
     setProductTitle('')
     setProductPrice('9.99')
+    setProductType('merch')
   }
   const resetEvent = () => {
     setEventTitle('')
@@ -274,7 +277,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
         .from('products')
         .insert({
           artist_id: artistId,
-          type: 'merch',
+          type: productType,
           title: label,
           price_cents: cents,
         })
@@ -475,7 +478,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
                 )}
               </div>
               <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                Describe the image (optional)
+                Creative direction (optional) — LLM expands for Generate / Clean
               </label>
               <textarea
                 value={imagePrompt}
@@ -519,8 +522,11 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
                 </p>
               )}
               <p className="text-[11px] text-[var(--signal-ink-muted)] leading-snug">
-                Generate uses your Studio API (<code className="text-[10px]">/api/product-image-generate</code>). Configure{' '}
-                <code className="text-[10px]">OPENAI_API_KEY</code> or Gemini in the server env (see README).
+                Uses <code className="text-[10px]">/api/product-image-generate</code> with{' '}
+                <code className="text-[10px]">npm run dev:all</code> (or <code className="text-[10px]">dev:vercel</code> +{' '}
+                <code className="text-[10px]">dev</code>). Set{' '}
+                <code className="text-[10px]">OPENAI_API_KEY</code> and/or <code className="text-[10px]">GEMINI_API_KEY</code>{' '}
+                in <code className="text-[10px]">.env</code>; an LLM refines your text before the image model runs.
               </p>
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
@@ -567,6 +573,16 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
 
               {tab === 'product' && (
                 <div className="space-y-3">
+                  <select
+                    value={productType}
+                    onChange={(e) => setProductType(e.target.value as 'merch' | 'track' | 'ticket')}
+                    disabled={saving}
+                    className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2.5 text-sm text-[var(--signal-ink)] bg-[var(--signal-white-pure)]"
+                  >
+                    <option value="merch">Merch / product</option>
+                    <option value="track">Track (live shop)</option>
+                    <option value="ticket">Ticket (live shop)</option>
+                  </select>
                   <input
                     type="text"
                     placeholder="Product title"
