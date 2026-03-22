@@ -4,8 +4,8 @@
  * Requires raw body for signature verification; do not parse body before calling.
  */
 import Stripe from 'stripe'
-import { supabaseAdmin } from './_lib/supabase.js'
-import { emitEvent } from './_lib/automation.js'
+import { supabaseAdmin } from '../_lib/supabase.js'
+import { emitEvent } from '../_lib/automation.js'
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-02-24.acacia' }) : null
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET

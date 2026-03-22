@@ -5,12 +5,12 @@
  * provider: 'openai' | 'gemini' — if omitted, prefers OPENAI when set, else Gemini.
  */
 import { randomUUID } from 'node:crypto'
-import { supabaseAdmin } from './_lib/supabase.js'
+import { supabaseAdmin } from '../_lib/supabase.js'
 import {
   DEFAULT_GEMINI_IMAGE_MODEL,
   enhancePortraitWithGemini,
-} from './_lib/geminiAvatar.js'
-import { enhancePortraitWithOpenAI } from './_lib/openaiAvatar.js'
+} from '../_lib/geminiAvatar.js'
+import { enhancePortraitWithOpenAI } from '../_lib/openaiAvatar.js'
 
 const openaiKey = process.env.OPENAI_API_KEY
 const geminiKey = process.env.GEMINI_API_KEY

@@ -3,8 +3,8 @@
  * Body: { action: "research", query } | { action: "polish", draft, display_name? }
  * Merged route to stay within Vercel Hobby serverless function limits.
  */
-import { supabaseAdmin } from './_lib/supabase.js'
-import { stripCitationMarkers } from './_lib/stripCitationMarkers.js'
+import { supabaseAdmin } from '../_lib/supabase.js'
+import { stripCitationMarkers } from '../_lib/stripCitationMarkers.js'
 
 const UA = 'Signal/1.0 (artist bio; +https://github.com/MarcServe/signal)'
 const DEFAULT_TEXT_MODEL = 'gemini-2.0-flash'

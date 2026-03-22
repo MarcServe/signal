@@ -8,19 +8,19 @@
  * - { artist_id, product_id | membership_id | event_id, source_image_url } — clean / standardize; LLM tailors retouch notes from title + optional creative_prompt
  */
 import { randomUUID } from 'node:crypto'
-import { supabaseAdmin } from './_lib/supabase.js'
+import { supabaseAdmin } from '../_lib/supabase.js'
 import {
   generateProductCoverWithGemini,
   enhanceCatalogImageWithGemini,
-} from './_lib/geminiProductImage.js'
+} from '../_lib/geminiProductImage.js'
 import {
   generateProductCoverWithOpenAI,
   enhanceCatalogImageWithOpenAI,
-} from './_lib/openaiCatalogImage.js'
+} from '../_lib/openaiCatalogImage.js'
 import {
   refineCatalogEnhanceNotes,
   refineCatalogGenerationPrompt,
-} from './_lib/catalogPromptLlm.js'
+} from '../_lib/catalogPromptLlm.js'
 
 function getAuthHeader(req: { headers?: { authorization?: string } }): string | null {
   const auth = req.headers?.authorization
