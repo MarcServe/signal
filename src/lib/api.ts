@@ -1,13 +1,13 @@
 /**
- * API base URL for serverless routes. Same origin in production (/api/*); set VITE_APP_URL for absolute URL.
- * Ignores common template values (e.g. https://yoursite.com) so local dev keeps using the Vite origin.
+ * API paths for serverless routes.
  *
- * Bare hostnames (e.g. `signal-xxx.vercel.app` without `https://`) must become real origins; otherwise
- * `fetch(base + ...)` treats them as path-relative and the browser resolves them under the current origin
- * (`/signal-xxx.vercel.app/api/...` → duplicate host in the path).
+ * In the browser we always use **relative** `/api/...` so calls stay on the same host as the page. That
+ * avoids a common production bug: `VITE_APP_URL` on Vercel pointing at another deployment or domain while
+ * you open the app on a different URL (every request would 404 on the wrong host).
  *
- * Values that include a path (e.g. `https://site.com/api`) are reduced to `origin` only so we never emit
- * `/api/api/...` (Vercel returns 404 for that path).
+ * Local: Vite `server.proxy` forwards `/api` to `VITE_API_PROXY_TARGET` (default 127.0.0.1:3000).
+ *
+ * Non-browser (rare): `VITE_APP_URL` can supply an absolute origin when no `window` exists.
  */
 function normalizeAppBaseUrl(url: string): string {
   const t = url.trim().replace(/\/+$/, '')
@@ -41,16 +41,14 @@ function isPlaceholderAppUrl(url: string): boolean {
 }
 
 const envAppUrl = typeof import.meta.env.VITE_APP_URL === 'string' ? import.meta.env.VITE_APP_URL : ''
-const base =
-  envAppUrl && !isPlaceholderAppUrl(envAppUrl)
-    ? normalizeAppBaseUrl(envAppUrl)
-    : typeof window !== 'undefined'
-      ? window.location.origin
-      : ''
 
 export function apiUrl(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`
-  return `${base}/api${p.startsWith('/api') ? p.slice(4) : p}`
+  const rel = `/api${p.startsWith('/api') ? p.slice(4) : p}`
+  if (typeof window !== 'undefined') return rel
+  const base =
+    envAppUrl && !isPlaceholderAppUrl(envAppUrl) ? normalizeAppBaseUrl(envAppUrl) : ''
+  return base ? `${base.replace(/\/$/, '')}${rel}` : rel
 }
 
 export async function getSession(): Promise<{ access_token: string } | null> {

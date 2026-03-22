@@ -96,7 +96,7 @@ export default async function handler(
     .eq('id', artistId)
     .single()
   if (artistErr || !artist) {
-    res.status(404).json({ error: 'Artist not found' })
+    res.status(422).json({ error: 'Artist not found' })
     return
   }
   if ((artist as { user_id: string }).user_id !== user.id) {
@@ -116,7 +116,7 @@ export default async function handler(
       .eq('id', productId)
       .single()
     if (prodErr || !product || (product as { artist_id: string }).artist_id !== artistId) {
-      res.status(404).json({ error: 'Product not found' })
+      res.status(422).json({ error: 'Product not found' })
       return
     }
     const row = product as { title: string; type: string }
@@ -128,7 +128,7 @@ export default async function handler(
       .eq('id', membershipId)
       .single()
     if (mErr || !m || (m as { artist_id: string }).artist_id !== artistId) {
-      res.status(404).json({ error: 'Membership not found' })
+      res.status(422).json({ error: 'Membership not found' })
       return
     }
     const row = m as { title: string }
@@ -140,7 +140,7 @@ export default async function handler(
       .eq('id', eventId)
       .single()
     if (evErr || !ev || (ev as { artist_id: string }).artist_id !== artistId) {
-      res.status(404).json({ error: 'Event not found' })
+      res.status(422).json({ error: 'Event not found' })
       return
     }
     const row = ev as { title: string }

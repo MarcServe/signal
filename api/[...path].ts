@@ -88,7 +88,7 @@ export default async function handler(req: any, res: any): Promise<void> {
   const sub = pathname ? byPath[pathname] : undefined
   if (!sub) {
     res.setHeader('Content-Type', 'application/json')
-    res.status(404).json({ error: 'Not found' })
+    res.status(404).json({ error: 'Not found', code: 'API_ROUTE' })
     return
   }
   await sub(req, res)

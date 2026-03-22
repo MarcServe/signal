@@ -15,7 +15,10 @@ export function formatCatalogImageApiFailure(res: Response, rawBody: string): st
   }
   try {
     if (trimmed) {
-      const j = JSON.parse(trimmed) as { error?: string }
+      const j = JSON.parse(trimmed) as { error?: string; code?: string }
+      if (res.status === 404 && j.code === 'API_ROUTE') {
+        return 'Image API routing failed on the server (deployment or build). Redeploy the latest main, or confirm Vercel Root Directory includes the top-level api/ folder.'
+      }
       if (typeof j.error === 'string' && j.error.trim()) return j.error.trim()
     }
   } catch {
