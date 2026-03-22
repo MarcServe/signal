@@ -90,16 +90,36 @@ export default async function handler(
     return
   }
 
-  const { data: artist, error: artistErr } = await supabaseAdmin
-    .from('artists')
-    .select('id, user_id')
-    .eq('id', artistId)
-    .single()
-  if (artistErr || !artist) {
-    res.status(422).json({ error: 'Artist not found' })
-    return
+  let resolvedArtistId = artistId
+  let artist: { id: string; user_id: string } | null = null
+
+  if (artistId) {
+    const { data: byId, error: byIdErr } = await supabaseAdmin
+      .from('artists')
+      .select('id, user_id')
+      .eq('id', artistId)
+      .single()
+    if (!byIdErr && byId) {
+      artist = byId as { id: string; user_id: string }
+    }
   }
-  if ((artist as { user_id: string }).user_id !== user.id) {
+
+  // If client-provided artist_id is stale/mock, recover using the authenticated owner.
+  if (!artist) {
+    const { data: byOwner, error: byOwnerErr } = await supabaseAdmin
+      .from('artists')
+      .select('id, user_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (byOwnerErr || !byOwner) {
+      res.status(422).json({ error: 'Artist not found' })
+      return
+    }
+    artist = byOwner as { id: string; user_id: string }
+    resolvedArtistId = artist.id
+  }
+
+  if (artist.user_id !== user.id) {
     res.status(403).json({
       error:
         'This account does not own that artist profile. Use the account that created the artist, or verify API and app use the same Supabase project.',
@@ -115,7 +135,7 @@ export default async function handler(
       .select('id, title, type, artist_id')
       .eq('id', productId)
       .single()
-    if (prodErr || !product || (product as { artist_id: string }).artist_id !== artistId) {
+    if (prodErr || !product || (product as { artist_id: string }).artist_id !== resolvedArtistId) {
       res.status(422).json({ error: 'Product not found' })
       return
     }
@@ -127,7 +147,7 @@ export default async function handler(
       .select('id, title, artist_id')
       .eq('id', membershipId)
       .single()
-    if (mErr || !m || (m as { artist_id: string }).artist_id !== artistId) {
+    if (mErr || !m || (m as { artist_id: string }).artist_id !== resolvedArtistId) {
       res.status(422).json({ error: 'Membership not found' })
       return
     }
@@ -139,7 +159,7 @@ export default async function handler(
       .select('id, title, artist_id')
       .eq('id', eventId)
       .single()
-    if (evErr || !ev || (ev as { artist_id: string }).artist_id !== artistId) {
+    if (evErr || !ev || (ev as { artist_id: string }).artist_id !== resolvedArtistId) {
       res.status(422).json({ error: 'Event not found' })
       return
     }
@@ -261,13 +281,13 @@ export default async function handler(
     let storagePath: string
     let table: 'products' | 'memberships' | 'events'
     if (target.kind === 'product') {
-      storagePath = `product-covers/${artistId}/${target.id}-${randomUUID()}.${ext}`
+      storagePath = `product-covers/${resolvedArtistId}/${target.id}-${randomUUID()}.${ext}`
       table = 'products'
     } else if (target.kind === 'membership') {
-      storagePath = `membership-covers/${artistId}/${target.id}-${randomUUID()}.${ext}`
+      storagePath = `membership-covers/${resolvedArtistId}/${target.id}-${randomUUID()}.${ext}`
       table = 'memberships'
     } else {
-      storagePath = `event-covers/${artistId}/${target.id}-${randomUUID()}.${ext}`
+      storagePath = `event-covers/${resolvedArtistId}/${target.id}-${randomUUID()}.${ext}`
       table = 'events'
     }
 
@@ -291,7 +311,7 @@ export default async function handler(
       .from(table)
       .update(patch)
       .eq('id', target.id)
-      .eq('artist_id', artistId)
+      .eq('artist_id', resolvedArtistId)
 
     if (updErr) {
       res.status(500).json({ error: updErr.message })
