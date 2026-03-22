@@ -37,7 +37,13 @@ async function getUserFromJwt(token: string): Promise<{ id: string } | null> {
   return error ? null : user ? { id: user.id } : null
 }
 
-type Target = { kind: 'product' | 'membership' | 'event'; id: string; title: string; typeLabel: string }
+type Target = {
+  kind: 'product' | 'membership' | 'event'
+  id: string
+  title: string
+  typeLabel: string
+  artistId: string
+}
 
 export default async function handler(
   req: {
@@ -70,7 +76,6 @@ export default async function handler(
     return
   }
   const {
-    artist_id: artistId,
     product_id: productId,
     membership_id: membershipId,
     event_id: eventId,
@@ -79,51 +84,14 @@ export default async function handler(
   } = req.body || {}
 
   const idCount = [productId, membershipId, eventId].filter(Boolean).length
-  if (!artistId || idCount !== 1) {
+  if (idCount !== 1) {
     res.status(400).json({
-      error: 'Provide artist_id and exactly one of product_id, membership_id, or event_id',
+      error: 'Provide exactly one of product_id, membership_id, or event_id',
     })
     return
   }
   if (!supabaseAdmin) {
     res.status(503).json({ error: 'Database not configured' })
-    return
-  }
-
-  let resolvedArtistId = artistId
-  let artist: { id: string; user_id: string } | null = null
-
-  if (artistId) {
-    const { data: byId, error: byIdErr } = await supabaseAdmin
-      .from('artists')
-      .select('id, user_id')
-      .eq('id', artistId)
-      .single()
-    if (!byIdErr && byId) {
-      artist = byId as { id: string; user_id: string }
-    }
-  }
-
-  // If client-provided artist_id is stale/mock, recover using the authenticated owner.
-  if (!artist) {
-    const { data: byOwner, error: byOwnerErr } = await supabaseAdmin
-      .from('artists')
-      .select('id, user_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (byOwnerErr || !byOwner) {
-      res.status(422).json({ error: 'Artist not found' })
-      return
-    }
-    artist = byOwner as { id: string; user_id: string }
-    resolvedArtistId = artist.id
-  }
-
-  if (artist.user_id !== user.id) {
-    res.status(403).json({
-      error:
-        'This account does not own that artist profile. Use the account that created the artist, or verify API and app use the same Supabase project.',
-    })
     return
   }
 
@@ -135,40 +103,76 @@ export default async function handler(
       .select('id, title, type, artist_id')
       .eq('id', productId)
       .single()
-    if (prodErr || !product || (product as { artist_id: string }).artist_id !== resolvedArtistId) {
+    if (prodErr || !product) {
       res.status(422).json({ error: 'Product not found' })
       return
     }
-    const row = product as { title: string; type: string }
-    target = { kind: 'product', id: productId, title: row.title, typeLabel: row.type || 'merch' }
+    const row = product as { title: string; type: string; artist_id: string }
+    target = {
+      kind: 'product',
+      id: productId,
+      title: row.title,
+      typeLabel: row.type || 'merch',
+      artistId: row.artist_id,
+    }
   } else if (membershipId) {
     const { data: m, error: mErr } = await supabaseAdmin
       .from('memberships')
       .select('id, title, artist_id')
       .eq('id', membershipId)
       .single()
-    if (mErr || !m || (m as { artist_id: string }).artist_id !== resolvedArtistId) {
+    if (mErr || !m) {
       res.status(422).json({ error: 'Membership not found' })
       return
     }
-    const row = m as { title: string }
-    target = { kind: 'membership', id: membershipId, title: row.title, typeLabel: 'membership tier' }
+    const row = m as { title: string; artist_id: string }
+    target = {
+      kind: 'membership',
+      id: membershipId,
+      title: row.title,
+      typeLabel: 'membership tier',
+      artistId: row.artist_id,
+    }
   } else if (eventId) {
     const { data: ev, error: evErr } = await supabaseAdmin
       .from('events')
       .select('id, title, artist_id')
       .eq('id', eventId)
       .single()
-    if (evErr || !ev || (ev as { artist_id: string }).artist_id !== resolvedArtistId) {
+    if (evErr || !ev) {
       res.status(422).json({ error: 'Event not found' })
       return
     }
-    const row = ev as { title: string }
-    target = { kind: 'event', id: eventId, title: row.title, typeLabel: 'live event' }
+    const row = ev as { title: string; artist_id: string }
+    target = {
+      kind: 'event',
+      id: eventId,
+      title: row.title,
+      typeLabel: 'live event',
+      artistId: row.artist_id,
+    }
   }
 
   if (!target) {
     res.status(400).json({ error: 'Invalid target' })
+    return
+  }
+  const resolvedArtistId = target.artistId
+
+  const { data: ownerArtist, error: ownerErr } = await supabaseAdmin
+    .from('artists')
+    .select('id, user_id')
+    .eq('id', resolvedArtistId)
+    .maybeSingle()
+  if (ownerErr || !ownerArtist) {
+    res.status(422).json({ error: 'Artist not found' })
+    return
+  }
+  if ((ownerArtist as { user_id: string }).user_id !== user.id) {
+    res.status(403).json({
+      error:
+        'This account does not own that artist profile. Use the account that created the artist, or verify API and app use the same Supabase project.',
+    })
     return
   }
 
