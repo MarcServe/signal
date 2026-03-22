@@ -5,17 +5,25 @@
  * Bare hostnames (e.g. `signal-xxx.vercel.app` without `https://`) must become real origins; otherwise
  * `fetch(base + ...)` treats them as path-relative and the browser resolves them under the current origin
  * (`/signal-xxx.vercel.app/api/...` → duplicate host in the path).
+ *
+ * Values that include a path (e.g. `https://site.com/api`) are reduced to `origin` only so we never emit
+ * `/api/api/...` (Vercel returns 404 for that path).
  */
 function normalizeAppBaseUrl(url: string): string {
   const t = url.trim().replace(/\/+$/, '')
   if (!t) return ''
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(t)
   const hostPart = t.split('/')[0] ?? t
   const isLocal =
     /^localhost\b/i.test(hostPart) ||
     hostPart.startsWith('127.0.0.1') ||
     hostPart.startsWith('[::1]')
-  return `${isLocal ? 'http' : 'https'}://${t}`
+  const withScheme = hasScheme ? t : `${isLocal ? 'http' : 'https'}://${t}`
+  try {
+    return new URL(withScheme).origin
+  } catch {
+    return ''
+  }
 }
 
 function isPlaceholderAppUrl(url: string): boolean {
