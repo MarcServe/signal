@@ -6,7 +6,12 @@ import { DiscoveryMobileCarousel } from '../components/DiscoveryMobileCarousel'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
-import { dedupeFeedByArtist, isPlaceholderAssetUrl, moveFeedItemsWithTitleToEnd } from '../lib/feedMerge'
+import {
+  dedupeFeedByArtist,
+  isPlaceholderAssetUrl,
+  moveFeedItemsWithTitleToEnd,
+  moveFeedItemsWithTitleToStart,
+} from '../lib/feedMerge'
 import type { FeedItem } from '../types/feed'
 
 const PAGE_SIZE = 20
@@ -148,12 +153,15 @@ export function Discovery() {
     return () => el?.removeEventListener('scroll', onScroll)
   }, [offset, hasMore, loadPage, loading])
 
-  const itemsWithLunaLast = useMemo(() => moveFeedItemsWithTitleToEnd(items, 'Luna'), [items])
+  const orderedFeedItems = useMemo(
+    () => moveFeedItemsWithTitleToEnd(moveFeedItemsWithTitleToStart(items, 'DJ Vance'), 'Luna'),
+    [items],
+  )
 
   const filteredItems = useMemo(() => {
-    if (!feedQuery) return itemsWithLunaLast
-    return itemsWithLunaLast.filter((item) => feedItemMatchesQuery(item, feedQuery))
-  }, [itemsWithLunaLast, feedQuery])
+    if (!feedQuery) return orderedFeedItems
+    return orderedFeedItems.filter((item) => feedItemMatchesQuery(item, feedQuery))
+  }, [orderedFeedItems, feedQuery])
 
   const feedBootstrapping = authLoading || (user && !profile) || (loading && items.length === 0)
 

@@ -2,7 +2,12 @@ import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
-import { dedupeFeedByArtist, isPlaceholderAssetUrl, moveFeedItemsWithTitleToEnd } from '../lib/feedMerge'
+import {
+  dedupeFeedByArtist,
+  isPlaceholderAssetUrl,
+  moveFeedItemsWithTitleToEnd,
+  moveFeedItemsWithTitleToStart,
+} from '../lib/feedMerge'
 import { getFeedItemDetailPath } from '../lib/feedNavigation'
 import type { FeedItem, FeedItemType } from '../types/feed'
 
@@ -24,7 +29,7 @@ function buildSpotlightSlides(raw: FeedItem[]): FeedItem[] {
       }
     }
   }
-  return moveFeedItemsWithTitleToEnd(picked, 'Luna')
+  return moveFeedItemsWithTitleToEnd(moveFeedItemsWithTitleToStart(picked, 'DJ Vance'), 'Luna')
 }
 
 /** Match `DiscoveryCard` image frame so spotlight looks like the feed. */

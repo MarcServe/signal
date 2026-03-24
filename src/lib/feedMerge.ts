@@ -39,6 +39,19 @@ export function dedupeFeedByArtist(items: FeedItem[]): FeedItem[] {
   )
 }
 
+/** Exact case-insensitive title match; those rows move to the start (stable order among matches). */
+export function moveFeedItemsWithTitleToStart(items: FeedItem[], title: string): FeedItem[] {
+  const needle = title.trim().toLowerCase()
+  if (!needle) return items
+  const front: FeedItem[] = []
+  const back: FeedItem[] = []
+  for (const it of items) {
+    if (it.title.trim().toLowerCase() === needle) front.push(it)
+    else back.push(it)
+  }
+  return [...front, ...back]
+}
+
 /** Exact case-insensitive title match; those rows move to the end (stable order among matches). */
 export function moveFeedItemsWithTitleToEnd(items: FeedItem[], title: string): FeedItem[] {
   const needle = title.trim().toLowerCase()
