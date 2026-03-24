@@ -42,7 +42,7 @@ export function DiscoveryCard({ item, layout = 'default' }: DiscoveryCardProps) 
       <div
         className={`relative bg-[var(--signal-silver-light)] ${
           fill
-            ? 'min-h-0 flex-1 w-full'
+            ? 'w-full flex-1 min-h-[max(15rem,min(82dvh,calc(100dvh-4.5rem)))]'
             : `${aspectClass} min-h-[200px]`
         }`}
       >

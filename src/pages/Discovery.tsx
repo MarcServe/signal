@@ -156,7 +156,7 @@ export function Discovery() {
   const feedBootstrapping = authLoading || (user && !profile) || (loading && items.length === 0)
 
   return (
-    <div className="box-border flex max-w-full min-h-0 flex-1 flex-col p-[var(--gutter)] max-md:p-0 md:min-h-screen">
+    <div className="box-border flex max-w-full min-h-0 flex-1 flex-col p-[var(--gutter)] max-md:h-full max-md:min-h-[calc(100dvh-3.5rem)] max-md:p-0 md:min-h-screen">
       {feedBootstrapping && (
         <div className="sticky top-0 z-20 flex min-h-[40vh] items-center justify-center px-4 text-sm text-[var(--signal-ink-muted)]">
           Loading feed…
@@ -181,18 +181,18 @@ export function Discovery() {
         </div>
       )}
       {!feedBootstrapping && (
-        <>
+        <div className="flex flex-1 flex-col max-md:min-h-[calc(100dvh-3.5rem)] md:min-h-0">
           {/* Mobile: infinite horizontal snap carousel + idle auto-advance */}
           <DiscoveryMobileCarousel items={filteredItems} />
           {/* Tablet/desktop: masonry */}
-          <div className="hidden md:block">
+          <div className="hidden min-h-0 flex-1 md:block">
             <MasonryGrid
               items={filteredItems}
               renderItem={(item) => <DiscoveryCard item={item} />}
               keyExtractor={(item) => `${item.item_type}-${item.id}`}
             />
           </div>
-        </>
+        </div>
       )}
       {items.length > 0 && feedQuery && filteredItems.length === 0 && !loading && (
         <div className="py-12 text-center text-[var(--signal-ink-muted)] px-4">

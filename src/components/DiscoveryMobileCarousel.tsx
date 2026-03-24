@@ -155,11 +155,14 @@ export function DiscoveryMobileCarousel({ items }: { items: FeedItem[] }) {
 
   if (n === 0) return null
 
+  /** Matches TopBar h-14; keeps slide height definite when nested flex + %/h-full would otherwise collapse. */
+  const slideMinH = 'min-h-[calc(100dvh-3.5rem)]'
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col md:hidden -mx-[var(--gutter)]">
+    <div className={`flex h-full flex-1 flex-col md:hidden -mx-[var(--gutter)] ${slideMinH}`}>
       <div
         ref={scrollerRef}
-        className="flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden scroll-smooth snap-x snap-mandatory px-[var(--gutter)] pb-1 no-scrollbar [-webkit-overflow-scrolling:touch]"
+        className={`flex h-full min-h-0 flex-1 flex-row items-stretch gap-4 overflow-x-auto overflow-y-hidden scroll-smooth snap-x snap-mandatory px-[var(--gutter)] pb-1 no-scrollbar [-webkit-overflow-scrolling:touch] ${slideMinH}`}
         role="region"
         aria-label="Discover — swipe sideways"
         onPointerDown={bumpUserPause}
@@ -167,17 +170,12 @@ export function DiscoveryMobileCarousel({ items }: { items: FeedItem[] }) {
         {loopItems.map((item, i) => (
           <div
             key={loopKeys[i]}
-            className="flex h-full min-h-0 w-[min(92vw,calc(100vw-3.75rem))] max-w-[420px] shrink-0 snap-center snap-always"
+            className={`flex h-full w-[min(92vw,calc(100vw-3.75rem))] max-w-[420px] shrink-0 snap-center snap-always ${slideMinH}`}
           >
             <DiscoveryCard item={item} layout="mobileFill" />
           </div>
         ))}
       </div>
-      {n > 1 && (
-        <p className="shrink-0 px-[var(--gutter)] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 text-center text-[11px] text-[var(--signal-ink-muted)]">
-          Swipe sideways for more · auto-advances when idle
-        </p>
-      )}
     </div>
   )
 }
