@@ -38,3 +38,16 @@ export function dedupeFeedByArtist(items: FeedItem[]): FeedItem[] {
     (a, b) => new Date(b.sort_at).getTime() - new Date(a.sort_at).getTime(),
   )
 }
+
+/** Exact case-insensitive title match; those rows move to the end (stable order among matches). */
+export function moveFeedItemsWithTitleToEnd(items: FeedItem[], title: string): FeedItem[] {
+  const needle = title.trim().toLowerCase()
+  if (!needle) return items
+  const front: FeedItem[] = []
+  const back: FeedItem[] = []
+  for (const it of items) {
+    if (it.title.trim().toLowerCase() === needle) back.push(it)
+    else front.push(it)
+  }
+  return [...front, ...back]
+}

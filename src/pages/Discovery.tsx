@@ -6,7 +6,7 @@ import { DiscoveryMobileCarousel } from '../components/DiscoveryMobileCarousel'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
-import { dedupeFeedByArtist, isPlaceholderAssetUrl } from '../lib/feedMerge'
+import { dedupeFeedByArtist, isPlaceholderAssetUrl, moveFeedItemsWithTitleToEnd } from '../lib/feedMerge'
 import type { FeedItem } from '../types/feed'
 
 const PAGE_SIZE = 20
@@ -148,10 +148,12 @@ export function Discovery() {
     return () => el?.removeEventListener('scroll', onScroll)
   }, [offset, hasMore, loadPage, loading])
 
+  const itemsWithLunaLast = useMemo(() => moveFeedItemsWithTitleToEnd(items, 'Luna'), [items])
+
   const filteredItems = useMemo(() => {
-    if (!feedQuery) return items
-    return items.filter((item) => feedItemMatchesQuery(item, feedQuery))
-  }, [items, feedQuery])
+    if (!feedQuery) return itemsWithLunaLast
+    return itemsWithLunaLast.filter((item) => feedItemMatchesQuery(item, feedQuery))
+  }, [itemsWithLunaLast, feedQuery])
 
   const feedBootstrapping = authLoading || (user && !profile) || (loading && items.length === 0)
 
