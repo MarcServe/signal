@@ -6,6 +6,11 @@
 
 import { supabase } from './supabase'
 
+/** Demo profiles use routes like `/artist/demo-artist-2` — not UUIDs; DB FKs reject them. */
+export function isDemoCommerceArtistId(artistId: string): boolean {
+  return artistId.startsWith('demo-artist-')
+}
+
 export interface CheckoutItem {
   /** Null for membership / PPV mock rows that are not tied to a product row. */
   productId: string | null
@@ -13,6 +18,8 @@ export interface CheckoutItem {
   title: string
   amountCents: number
   type: 'merch' | 'ticket' | 'membership' | 'track' | 'ppv'
+  /** Required for mock/live membership parity with `subscriptions` table (Stripe webhook sets this too). */
+  membershipId?: string | null
 }
 
 async function getPlatformFeePercent(): Promise<number> {
@@ -37,6 +44,9 @@ export async function createMockPurchase(
   userId: string,
   item: CheckoutItem
 ): Promise<{ success: boolean; error?: string }> {
+  if (isDemoCommerceArtistId(item.artistId)) {
+    return { success: true }
+  }
   const feePercent = await getPlatformFeePercent()
   const { platformFeeCents, artistPayoutCents } = computeFee(item.amountCents, feePercent)
   const txType =
@@ -57,6 +67,22 @@ export async function createMockPurchase(
     artist_payout_cents: artistPayoutCents,
   })
   if (error) return { success: false, error: error.message }
+
+  if (item.type === 'membership' && item.membershipId) {
+    const { error: subErr } = await supabase.from('subscriptions').upsert(
+      {
+        user_id: userId,
+        artist_id: item.artistId,
+        membership_id: item.membershipId,
+        status: 'active',
+        stripe_subscription_id: null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,artist_id' }
+    )
+    if (subErr) return { success: false, error: subErr.message }
+  }
+
   return { success: true }
 }
 
@@ -66,6 +92,9 @@ export async function createMockTip(
   artistId: string,
   amountCents: number
 ): Promise<{ success: boolean; error?: string }> {
+  if (isDemoCommerceArtistId(artistId)) {
+    return { success: true }
+  }
   const feePercent = await getPlatformFeePercent()
   const { platformFeeCents, artistPayoutCents } = computeFee(amountCents, feePercent)
   const { error } = await supabase.from('transactions').insert({

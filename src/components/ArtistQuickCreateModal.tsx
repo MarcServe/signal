@@ -586,7 +586,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
                   />
                   <input
                     type="text"
-                    placeholder="Price (e.g. 9.99)"
+                    placeholder="Price in £ (e.g. 9.99)"
                     value={productPrice}
                     onChange={(e) => setProductPrice(e.target.value)}
                     disabled={saving}
@@ -658,7 +658,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
                   />
                   <input
                     type="text"
-                    placeholder="Monthly price (e.g. 9.99)"
+                    placeholder="Monthly price in £ (e.g. 9.99)"
                     value={tierPrice}
                     onChange={(e) => setTierPrice(e.target.value)}
                     disabled={saving}

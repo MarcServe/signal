@@ -9,4 +9,6 @@ export interface FeedItem {
   is_live: boolean
   cta: string
   sort_at: string
+  /** When set (e.g. demo tiles), navigation uses this path instead of rules from `item_type`. */
+  link_path?: string
 }

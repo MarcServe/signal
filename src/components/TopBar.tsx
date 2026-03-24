@@ -13,14 +13,6 @@ function SearchIcon({ className, strokeWidth = 1.5 }: { className?: string; stro
   )
 }
 
-function GridIcon({ className, strokeWidth = 1.5 }: { className?: string; strokeWidth?: number }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={strokeWidth}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 5.5h6.5v6.5H4V5.5zm9.5 0H20v6.5h-6.5V5.5zM4 15h6.5v6.5H4V15zm9.5 0H20v6.5h-6.5V15z" />
-    </svg>
-  )
-}
-
 function LogOutIcon({ className, strokeWidth = 1.5 }: { className?: string; strokeWidth?: number }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={strokeWidth}>
@@ -38,7 +30,7 @@ function ArrowEnterIcon({ className, strokeWidth = 1.5 }: { className?: string; 
 }
 
 export function TopBar() {
-  const { user, profile, signOut } = useAuth()
+  const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -140,14 +132,6 @@ export function TopBar() {
       <nav className="flex shrink-0 items-center gap-1" aria-label="Account">
         {user ? (
           <>
-            <Link
-              to="/dashboard"
-              className={iconBtn}
-              aria-label={profile?.role === 'artist' ? 'Studio' : 'Home / dashboard'}
-              title={profile?.role === 'artist' ? 'Studio' : 'Home / dashboard'}
-            >
-              <GridIcon className="h-5 w-5" />
-            </Link>
             <button type="button" onClick={handleSignOut} className={iconBtn} aria-label="Sign out" title="Sign out">
               <LogOutIcon className="h-5 w-5" />
             </button>

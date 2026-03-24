@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { MasonryGrid, masonryGridContainerStyle } from '../design-system/MasonryGrid'
 import { DiscoveryCard } from '../components/DiscoveryCard'
+import { DiscoveryMobileCarousel } from '../components/DiscoveryMobileCarousel'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
@@ -180,11 +181,18 @@ export function Discovery() {
         </div>
       )}
       {!feedBootstrapping && (
-        <MasonryGrid
-          items={filteredItems}
-          renderItem={(item) => <DiscoveryCard item={item} />}
-          keyExtractor={(item) => `${item.item_type}-${item.id}`}
-        />
+        <>
+          {/* Mobile: infinite horizontal snap carousel + idle auto-advance */}
+          <DiscoveryMobileCarousel items={filteredItems} />
+          {/* Tablet/desktop: masonry */}
+          <div className="hidden md:block">
+            <MasonryGrid
+              items={filteredItems}
+              renderItem={(item) => <DiscoveryCard item={item} />}
+              keyExtractor={(item) => `${item.item_type}-${item.id}`}
+            />
+          </div>
+        </>
       )}
       {items.length > 0 && feedQuery && filteredItems.length === 0 && !loading && (
         <div className="py-12 text-center text-[var(--signal-ink-muted)] px-4">

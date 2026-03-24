@@ -14,22 +14,34 @@ export interface DemoStreamData {
   avatar_image_url: string | null
 }
 
-/** Sample HLS/MP4 for demo (Big Buck Bunny public domain). */
-const DEMO_PLAYBACK_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+/**
+ * Sample YouTube VODs as stand-ins for “live” demo tiles (card art stays local).
+ * Order matches demo-1 … demo-5. Production streams use real `playback_url` + HLS from the DB.
+ */
+const DEMO_YOUTUBE_BY_STREAM_ID: Record<string, string> = {
+  'demo-1': '5__WNEAWIAg',
+  'demo-3': 'sy0nNu7p7-g',
+  'demo-5': 'dxfWIa8PQ0w',
+}
+
+function youtubePlaybackUrl(streamId: string): string | null {
+  const id = DEMO_YOUTUBE_BY_STREAM_ID[streamId]
+  return id ? `youtube:${id}` : null
+}
 
 function buildDemoStreams(): Record<string, DemoStreamData> {
   const byStreamId: Record<string, DemoStreamData> = {}
-  // Include both stream and artist cards so we have multiple demo streams to cycle (e.g. demo-1, demo-2)
   const streamItems = DEMO_FEED_ITEMS.filter(
-    (i) => (i.item_type === 'stream' || i.item_type === 'artist') && i.id.startsWith('demo-')
+    (i) => i.item_type === 'stream' && i.id.startsWith('demo-')
   )
   for (const item of streamItems) {
     const profile = DEMO_ARTIST_PROFILES[item.artist_id]
-    const isLive = item.item_type === 'stream' ? item.is_live : !!item.is_live
+    const isLive = item.is_live
+    const yt = youtubePlaybackUrl(item.id)
     byStreamId[item.id] = {
       id: item.id,
       title: item.title,
-      playback_url: isLive ? DEMO_PLAYBACK_URL : DEMO_PLAYBACK_URL,
+      playback_url: isLive && yt ? yt : null,
       artist_id: item.artist_id,
       is_live: isLive,
       display_name: profile?.display_name ?? item.title,
@@ -48,5 +60,11 @@ export function getDemoStream(streamId: string): DemoStreamData | null {
 
 /** Ordered demo stream IDs for prev/next cycling in LiveView. */
 export const DEMO_STREAM_IDS: string[] = DEMO_FEED_ITEMS.filter(
-  (i) => (i.item_type === 'stream' || i.item_type === 'artist') && i.id.startsWith('demo-')
-).map((i) => i.id)
+  (i) => i.item_type === 'stream' && i.id.startsWith('demo-') && i.is_live
+)
+  .map((i) => i.id)
+  .sort((a, b) => {
+    const na = parseInt(a.replace('demo-', ''), 10)
+    const nb = parseInt(b.replace('demo-', ''), 10)
+    return (Number.isFinite(na) ? na : 0) - (Number.isFinite(nb) ? nb : 0)
+  })

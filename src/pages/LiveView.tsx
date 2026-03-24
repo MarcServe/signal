@@ -7,8 +7,10 @@ import { getDemoStream, DEMO_STREAM_IDS } from '../data/demoStreams'
 import { useSwipeGesture } from '../design-system/gestures'
 import { CheckoutDrawer } from '../components/CheckoutDrawer'
 import type { CheckoutType } from '../components/CheckoutDrawer'
+import { formatGbp, formatGbpWhole } from '../lib/currency'
 import { AI_FEATURES_ENABLED } from '../lib/features'
 import { resolveStreamPlaybackUrl } from '../lib/hlsPlayback'
+import { getYoutubeVideoIdFromPlayback } from '../lib/youtubePlayback'
 import { HlsVideo } from '../components/HlsVideo'
 
 const FREE_VIEW_MINUTES = 20
@@ -289,7 +291,8 @@ export function LiveView() {
     )
   }
 
-  const playbackSrc = resolveStreamPlaybackUrl(stream)
+  const youtubeVideoId = getYoutubeVideoIdFromPlayback(stream.playback_url)
+  const playbackSrc = youtubeVideoId ? null : resolveStreamPlaybackUrl(stream)
 
   return (
     <div
@@ -299,7 +302,15 @@ export function LiveView() {
     >
       {/* Full-bleed video */}
       <div className="absolute inset-0 flex items-center justify-center bg-[var(--signal-ink)]">
-        {playbackSrc ? (
+        {youtubeVideoId ? (
+          <iframe
+            title={stream.title ? `Stream: ${stream.title}` : 'Stream'}
+            className="max-h-full w-full aspect-video border-0"
+            src={`https://www.youtube-nocookie.com/embed/${youtubeVideoId}?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1`}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allowFullScreen
+          />
+        ) : playbackSrc ? (
           <HlsVideo
             className="max-h-full w-full object-contain"
             src={playbackSrc}
@@ -623,7 +634,7 @@ export function LiveView() {
                       >
                         <span className="text-sm font-medium text-[var(--signal-ink)] truncate">{t.title}</span>
                         <span className="text-sm text-[var(--signal-gold)] shrink-0">
-                          ${((t.price_cents ?? 0) / 100).toFixed(2)}
+                          {formatGbp(t.price_cents ?? 0)}
                         </span>
                       </button>
                     </li>
@@ -655,7 +666,7 @@ export function LiveView() {
                       >
                         <span className="text-sm font-medium text-[var(--signal-ink)] truncate">{t.title}</span>
                         <span className="text-sm text-[var(--signal-gold)] shrink-0">
-                          ${((t.price_cents ?? 0) / 100).toFixed(2)}
+                          {formatGbp(t.price_cents ?? 0)}
                         </span>
                       </button>
                     </li>
@@ -685,7 +696,7 @@ export function LiveView() {
                       >
                         <span className="text-sm font-medium text-[var(--signal-ink)] truncate">{m.title}</span>
                         <span className="text-sm text-[var(--signal-gold)] shrink-0">
-                          ${((m.price_cents ?? 0) / 100).toFixed(2)}/mo
+                          {formatGbp(m.price_cents ?? 0)}/mo
                         </span>
                       </button>
                     </li>
@@ -822,7 +833,7 @@ export function LiveView() {
                   onClick={() => setTipAmountCents(cents)}
                   className={`flex-1 py-2 rounded-xl text-sm font-medium ${tipAmountCents === cents ? 'bg-[var(--signal-gold)] text-white' : 'bg-[var(--signal-silver-light)]/50 text-[var(--signal-ink)]'}`}
                 >
-                  ${(cents / 100).toFixed(0)}
+                  {formatGbpWhole(cents)}
                 </button>
               ))}
             </div>
@@ -849,7 +860,7 @@ export function LiveView() {
               }}
               className="w-full py-3 rounded-xl bg-[var(--signal-gold)] text-white font-medium disabled:opacity-50"
             >
-              {tipSending ? 'Sending…' : `Tip $${(tipAmountCents / 100).toFixed(2)}`}
+              {tipSending ? 'Sending…' : `Tip ${formatGbp(tipAmountCents)}`}
             </button>
             <button
               type="button"

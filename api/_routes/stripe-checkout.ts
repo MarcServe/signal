@@ -86,19 +86,30 @@ export default async function handler(
   const platformFeePercent = 10
   const applicationFeeAmount = Math.round(amountCents * (platformFeePercent / 100))
 
-  const session = await stripe.checkout.sessions.create({
+  const sessionParams: Stripe.Checkout.SessionCreateParams = {
     mode: item_type === 'membership' ? 'subscription' : 'payment',
-    payment_method_types: ['card'],
-    line_items: [{ price_data: { currency: 'usd', unit_amount: amountCents, product_data: { name: productName } }, quantity: 1 }],
+    payment_method_types: ['card', 'link'],
+    line_items: [{ price_data: { currency: 'gbp', unit_amount: amountCents, product_data: { name: productName } }, quantity: 1 }],
     success_url: success,
     cancel_url: cancel,
     client_reference_id: JSON.stringify({ user_id: user.id, artist_id, item_type, item_id: item_id || null, membership_id: membership_id || null }),
     customer_email: user.email || undefined,
-    payment_intent_data: stripeAccountId
-      ? { application_fee_amount: applicationFeeAmount, transfer_data: { destination: stripeAccountId } }
-      : undefined,
     metadata: { artist_id, item_type, user_id: user.id },
-  })
+  }
+
+  if (item_type !== 'membership') {
+    sessionParams.payment_intent_data = stripeAccountId
+      ? { application_fee_amount: applicationFeeAmount, transfer_data: { destination: stripeAccountId } }
+      : undefined
+    sessionParams.customer_creation = 'always'
+    sessionParams.saved_payment_method_options = { payment_method_save: 'enabled' }
+  } else {
+    sessionParams.subscription_data = stripeAccountId
+      ? { application_fee_percent: platformFeePercent, transfer_data: { destination: stripeAccountId } }
+      : undefined
+  }
+
+  const session = await stripe.checkout.sessions.create(sessionParams)
 
   res.status(200).json({ url: session.url })
 }

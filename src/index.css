@@ -64,3 +64,12 @@ body {
 .masonry-grid-column > * {
   margin-bottom: 1rem;
 }
+
+/* Horizontal carousels (discover feed on mobile, dashboard tabs) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

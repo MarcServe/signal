@@ -2,6 +2,9 @@ import type { FeedItem } from '../types/feed'
 
 /** Same destinations as `DiscoveryCard` — live streams, artist profiles, product/event deep links. */
 export function getFeedItemDetailPath(item: FeedItem): string {
+  const override = item.link_path?.trim()
+  if (override) return override.startsWith('/') ? override : `/${override}`
+
   if (item.item_type === 'stream' && item.is_live) {
     return `/live/${item.id}`
   }

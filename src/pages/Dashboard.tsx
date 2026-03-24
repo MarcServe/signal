@@ -11,11 +11,8 @@ import {
   type CatalogKind,
 } from '../lib/catalogImage'
 import { normalizePublicHandle, stripCitationMarkers } from '../lib/cleanBioText'
+import { formatGbp } from '../lib/currency'
 import {
-  buildHlsPlaylistUrl,
-  getHlsBaseUrl,
-  isLanOrLoopbackPlaybackUrl,
-  normalizeRtmpStreamKeyInput,
   resolveStreamPlaybackUrl,
 } from '../lib/hlsPlayback'
 import { HlsVideo } from '../components/HlsVideo'
@@ -65,6 +62,15 @@ async function fetchMembershipRows(
   return rows.map((r) => ({ ...r, image_url: null }))
 }
 
+type ArtistSaleRow = {
+  id: string
+  type: string
+  amount_cents: number
+  created_at: string
+  products: { id: string; title: string; type: string } | null
+  users: { id: string; full_name: string | null; avatar_url: string | null } | null
+}
+
 export function Dashboard() {
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   const navigate = useNavigate()
@@ -94,19 +100,16 @@ export function Dashboard() {
   const [streams, setStreams] = useState<DashboardStreamRow[]>([])
   const [broadcastStreamId, setBroadcastStreamId] = useState<string | null>(null)
   const [creatingBroadcastStream, setCreatingBroadcastStream] = useState(false)
-  const [savingPlaybackUrl, setSavingPlaybackUrl] = useState(false)
-  const [clearingBadPlaybackUrl, setClearingBadPlaybackUrl] = useState(false)
-  const [savingStreamKey, setSavingStreamKey] = useState(false)
   const [streamKeyDraft, setStreamKeyDraft] = useState('')
   const [togglingSignalLive, setTogglingSignalLive] = useState(false)
   const [goLiveNotice, setGoLiveNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [products, setProducts] = useState<
-    { id: string; title: string; image_url: string | null; type: string; price_cents: number }[]
+    { id: string; title: string; image_url: string | null; type: string; price_cents: number; file_url?: string | null }[]
   >([])
   const [catalogBusy, setCatalogBusy] = useState<{ kind: CatalogKind; id: string } | null>(null)
   const [catalogImageNotice, setCatalogImageNotice] = useState<string | null>(null)
   const catalogFileRef = useRef<HTMLInputElement>(null)
-  const pendingCatalogUpload = useRef<{ kind: CatalogKind; id: string } | null>(null)
+  const pendingCatalogUpload = useRef<{ kind: CatalogKind | 'product_file'; id: string } | null>(null)
   const [catalogPrompts, setCatalogPrompts] = useState<Record<string, string>>({})
   const [events, setEvents] = useState<
     { id: string; title: string; starts_at: string; venue: string | null; image_url: string | null }[]
@@ -137,6 +140,10 @@ export function Dashboard() {
   const [backfillBusy, setBackfillBusy] = useState(false)
   const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null)
   const [backfillNotice, setBackfillNotice] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'overview' | 'content' | 'settings'>('overview')
+
+  const [sales, setSales] = useState<ArtistSaleRow[]>([])
+  const [salesLoading, setSalesLoading] = useState(false)
 
   const refreshStreams = useCallback(async (aid: string) => {
     const { data: s } = await supabase
@@ -164,10 +171,26 @@ export function Dashboard() {
   const reloadProducts = async (id: string) => {
     const { data } = await supabase
       .from('products')
-      .select('id, title, image_url, type, price_cents')
+      .select('id, title, image_url, type, price_cents, file_url')
       .eq('artist_id', id)
       .limit(40)
     setProducts((data ?? []) as typeof products)
+  }
+
+  const reloadSales = async (id: string) => {
+    setSalesLoading(true)
+    const { data } = await supabase
+      .from('transactions')
+      .select(`
+        id, type, amount_cents, created_at,
+        products ( id, title, type ),
+        users ( id, full_name, avatar_url )
+      `)
+      .eq('artist_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setSales((data ?? []) as unknown as ArtistSaleRow[])
+    setSalesLoading(false)
   }
 
   /**
@@ -374,9 +397,10 @@ export function Dashboard() {
         setArtist(merged as typeof artist)
         if (data.id) {
           void refreshStreams(data.id)
+          void reloadSales(data.id)
           supabase
             .from('products')
-            .select('id, title, image_url, type, price_cents')
+            .select('id, title, image_url, type, price_cents, file_url')
             .eq('artist_id', data.id)
             .limit(40)
             .then(({ data: p }) => setProducts((p ?? []) as typeof products))
@@ -498,7 +522,7 @@ export function Dashboard() {
   const trackCatalog = products.filter((p) => p.type === 'track')
   const merchAndTicketsCatalog = products.filter((p) => p.type === 'merch' || p.type === 'ticket')
 
-  type CatalogProductRow = (typeof products)[number]
+  type CatalogProductRow = (typeof products)[number] & { file_url?: string | null }
   function renderCatalogProductCard(p: CatalogProductRow) {
     const pCardImg = catalogCardImageUrl(p.image_url, catalogPortrait)
     const pCleanSource = p.image_url?.trim() || catalogPortrait
@@ -509,7 +533,7 @@ export function Dashboard() {
       >
         <div className="relative aspect-[3/4] bg-[var(--signal-silver-light)]/40">
           {pCardImg ? (
-            <img src={pCardImg} alt="" className="absolute inset-0 h-full w-full object-contain object-center bg-[var(--signal-silver-light)]/30" />
+            <img src={pCardImg} alt="" className="absolute inset-0 h-full w-full object-cover object-center bg-[var(--signal-silver-light)]/30" />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <span className="text-[var(--signal-ink-muted)] text-sm text-center line-clamp-3" style={{ fontFamily: 'var(--font-body)' }}>
@@ -532,7 +556,7 @@ export function Dashboard() {
               {p.type === 'track' ? 'Track' : p.type === 'ticket' ? 'Ticket' : 'Merch'}
             </span>
           </div>
-          <p className="text-xs text-[var(--signal-gold)]">${((p.price_cents ?? 0) / 100).toFixed(2)}</p>
+          <p className="text-xs text-[var(--signal-gold)]">{formatGbp(p.price_cents ?? 0)}</p>
           <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
             Creative direction (optional) — expanded by LLM for Generate / Clean
           </label>
@@ -545,6 +569,18 @@ export function Dashboard() {
             className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
           />
           <div className="flex flex-wrap gap-2">
+            {p.type === 'track' && (
+              <button
+                type="button"
+                onClick={() => {
+                  pendingCatalogUpload.current = { kind: 'product_file', id: p.id }
+                  catalogFileRef.current?.click()
+                }}
+                className={`text-xs px-2.5 py-1.5 rounded-lg border ${p.file_url ? 'border-[var(--signal-gold)] text-[var(--signal-gold)]' : 'border-[var(--signal-silver-light)] text-[var(--signal-ink)]'} hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50`}
+              >
+                {p.file_url ? 'Update Audio' : 'Upload Audio'}
+              </button>
+            )}
             <button
               type="button"
               disabled={catalogBusy !== null}
@@ -554,7 +590,7 @@ export function Dashboard() {
               }}
               className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-silver-light)] text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/25 disabled:opacity-50"
             >
-              Upload
+              Upload Cover
             </button>
             <button
               type="button"
@@ -798,11 +834,54 @@ export function Dashboard() {
         )}
 
         {artistId && (
-          <section className="mb-[var(--space-2xl)]">
-            <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-1" style={{ fontFamily: 'var(--font-display)' }}>
-              About
-            </h2>
-            <p className="text-xs text-[var(--signal-ink-muted)] mb-3">
+          <div className="flex gap-6 border-b border-[var(--signal-silver-light)] mb-8 overflow-x-auto no-scrollbar">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`pb-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'overview'
+                  ? 'border-b-2 border-[var(--signal-ink)] text-[var(--signal-ink)]'
+                  : 'text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] border-b-2 border-transparent'
+              }`}
+            >
+              Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('content')}
+              className={`pb-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'content'
+                  ? 'border-b-2 border-[var(--signal-ink)] text-[var(--signal-ink)]'
+                  : 'text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] border-b-2 border-transparent'
+              }`}
+            >
+              Content &amp; Store
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`pb-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'settings'
+                  ? 'border-b-2 border-[var(--signal-ink)] text-[var(--signal-ink)]'
+                  : 'text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] border-b-2 border-transparent'
+              }`}
+            >
+              Settings
+            </button>
+          </div>
+        )}
+
+        {artistId && activeTab === 'settings' && (
+          <details className="group/about mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+            <summary
+              className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              <span className="truncate">About</span>
+              <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+                <span className="group-open/about:hidden">Expand</span>
+                <span className="hidden group-open/about:inline">Collapse</span>
+              </span>
+            </summary>
+            <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
+            <p className="text-xs text-[var(--signal-ink-muted)] pt-3 mb-3">
               Public profile only. <span className="text-[var(--signal-ink)]">Refine</span> polishes your notes with built-in
               AI (no web lookup). <span className="text-[var(--signal-ink)]">Web</span> pulls a short public bio when
               available.
@@ -902,7 +981,8 @@ export function Dashboard() {
                 {bioSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
-          </section>
+            </div>
+          </details>
         )}
 
         {feeFreeToday && (
@@ -912,7 +992,7 @@ export function Dashboard() {
         )}
 
         {/* Go live: RTMP + optional custom OBS key + HLS playback URL — collapsed by default */}
-        {artistId && (
+        {artistId && activeTab === 'overview' && (
           <details
             className="group/golive mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
             open={goLiveSectionOpen}
@@ -937,7 +1017,7 @@ export function Dashboard() {
               </span>
             </summary>
             <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
-              <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-4 space-y-4 mt-3">
+              <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-5 space-y-6 mt-3">
               {goLiveNotice && (
                 <p
                   className={`text-sm ${goLiveNotice.type === 'err' ? 'text-red-600' : 'text-[var(--signal-gold)]'}`}
@@ -947,12 +1027,9 @@ export function Dashboard() {
                 </p>
               )}
               {streams.length === 0 ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-[var(--signal-ink-muted)]">
-                    Create a broadcast stream. Use your <strong className="text-[var(--signal-ink)]">stream UUID</strong> or a{' '}
-                    <strong className="text-[var(--signal-ink)]">custom key</strong> (e.g. <code className="text-xs">whitesheep21</code>)
-                    in OBS — custom keys must be saved here so HLS URLs match. Fans always open{' '}
-                    <code className="text-xs bg-[var(--signal-silver-light)]/50 px-1 rounded">/live/&lt;stream-id&gt;</code>.
+                <div className="text-center py-4">
+                  <p className="text-sm text-[var(--signal-ink-muted)] mb-4">
+                    Ready to stream? Create a broadcast to get your OBS connection details.
                   </p>
                   <button
                     type="button"
@@ -974,304 +1051,140 @@ export function Dashboard() {
                       if (row?.id) setBroadcastStreamId(row.id)
                       setGoLiveNotice({ type: 'ok', text: 'Broadcast stream created. Use the stream key below in OBS.' })
                     }}
-                    className="px-3 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm hover:opacity-90 disabled:opacity-50"
+                    className="px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
                   >
-                    {creatingBroadcastStream ? 'Creating…' : 'Create broadcast stream'}
+                    {creatingBroadcastStream ? 'Creating…' : 'Create broadcast'}
                   </button>
                 </div>
               ) : (
                 <>
-                  {streams.length > 1 && (
-                    <div>
-                      <label className="block text-xs font-medium text-[var(--signal-ink-muted)] mb-1">Broadcast target</label>
-                      <select
-                        value={broadcastStreamId ?? ''}
-                        onChange={(e) => {
-                          setBroadcastStreamId(e.target.value || null)
-                          setGoLiveNotice(null)
-                        }}
-                        className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm text-[var(--signal-ink)] bg-[var(--signal-white-pure)]"
-                      >
-                        {streams.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.title ?? 'Untitled'} · …{s.id.slice(0, 8)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  {/* STEP 1: OBS Settings */}
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <label className="text-xs font-medium text-[var(--signal-ink-muted)]">RTMP URL</label>
-                      <button
-                        type="button"
-                        className="text-xs text-[var(--signal-gold)] hover:underline"
-                        onClick={() => {
-                          const u =
-                            (import.meta as unknown as { env: { VITE_RTMP_URL?: string } }).env?.VITE_RTMP_URL ||
-                            'rtmp://your-server/live'
-                          void navigator.clipboard.writeText(u).then(() => setGoLiveNotice({ type: 'ok', text: 'RTMP URL copied.' }))
-                        }}
-                      >
-                        Copy
-                      </button>
-                    </div>
-                    <code className="block w-full px-3 py-2 rounded bg-[var(--signal-silver-light)]/50 text-sm text-[var(--signal-ink)] break-all">
-                      {(import.meta as unknown as { env: { VITE_RTMP_URL?: string } }).env?.VITE_RTMP_URL || 'rtmp://your-server/live'}
-                    </code>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <label className="text-xs font-medium text-[var(--signal-ink-muted)]">OBS stream key</label>
-                      <button
-                        type="button"
-                        className="text-xs text-[var(--signal-gold)] hover:underline"
-                        onClick={() => {
-                          if (!rtmpSegment) return
-                          void navigator.clipboard
-                            .writeText(rtmpSegment)
-                            .then(() => setGoLiveNotice({ type: 'ok', text: 'Stream key copied.' }))
-                        }}
-                      >
-                        Copy
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      value={streamKeyDraft}
-                      onChange={(e) => {
-                        setStreamKeyDraft(e.target.value)
-                        setGoLiveNotice(null)
-                      }}
-                      placeholder={broadcastStreamId ?? ''}
-                      className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm text-[var(--signal-ink)] font-mono bg-[var(--signal-white-pure)]"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    <p className="mt-1 text-xs text-[var(--signal-ink-muted)]">
-                      Leave empty to use your stream UUID as the key. For a custom key (letters, numbers, <code className="text-[10px]">_</code>,{' '}
-                      <code className="text-[10px]">-</code>), type it here, save, then use the same value in OBS. Effective key:{' '}
-                      <code className="text-[11px] bg-[var(--signal-silver-light)]/50 px-1 rounded break-all">{rtmpSegment || '—'}</code>
+                    <h3 className="text-sm font-medium text-[var(--signal-ink)] mb-1 flex items-center gap-2">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[var(--signal-silver-light)]/50 text-[10px]">1</span>
+                      Connect your streaming software (OBS)
+                    </h3>
+                    <p className="text-xs text-[var(--signal-ink-muted)] mb-4 pl-7">
+                      In OBS, go to <strong>Settings &gt; Stream</strong> and set Service to <strong>Custom</strong>.
                     </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={savingStreamKey || !broadcastStreamId}
-                        onClick={async () => {
-                          if (!broadcastStreamId || !artistId) return
-                          const parsed = normalizeRtmpStreamKeyInput(streamKeyDraft)
-                          if (!parsed.ok) {
-                            setGoLiveNotice({ type: 'err', text: parsed.error })
-                            return
-                          }
-                          setGoLiveNotice(null)
-                          setSavingStreamKey(true)
-                          const { error } = await supabase
-                            .from('streams')
-                            .update({ stream_key: parsed.value })
-                            .eq('id', broadcastStreamId)
-                          setSavingStreamKey(false)
-                          if (error) {
-                            setGoLiveNotice({ type: 'err', text: error.message || 'Could not save stream key.' })
-                            return
-                          }
-                          await refreshStreams(artistId)
-                          setGoLiveNotice({
-                            type: 'ok',
-                            text: parsed.value
-                              ? 'Custom stream key saved. Paste it into OBS.'
-                              : 'Cleared custom key — OBS should use your stream UUID.',
-                          })
-                        }}
-                        className="px-3 py-2 rounded-xl border border-[var(--signal-silver-light)] text-sm text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/20 disabled:opacity-50"
-                      >
-                        {savingStreamKey ? 'Saving…' : 'Save stream key'}
-                      </button>
-                      <span className="text-xs text-[var(--signal-ink-muted)]">
-                        Fan page (unchanged):{' '}
-                        <Link
-                          to={broadcastStreamId ? `/live/${broadcastStreamId}` : '#'}
-                          className="text-[var(--signal-gold)] underline-offset-2 hover:underline"
-                          onClick={(e) => {
-                            if (!broadcastStreamId) e.preventDefault()
-                          }}
-                        >
-                          /live/{broadcastStreamId ? `${broadcastStreamId.slice(0, 8)}…` : '…'}
-                        </Link>
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <label className="text-xs font-medium text-[var(--signal-ink-muted)]">HLS playback URL (for Signal player)</label>
-                      {broadcastStreamId && buildHlsPlaylistUrl(rtmpSegment) && (
+                    
+                    <div className="space-y-3 pl-7">
+                      {/* RTMP URL */}
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--signal-silver-light)]/20 border border-[var(--signal-silver-light)]/50">
+                        <div>
+                          <p className="text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide mb-0.5">Server URL</p>
+                          <code className="text-sm text-[var(--signal-ink)]">
+                            {(import.meta as any).env?.VITE_RTMP_URL || 'rtmp://your-server/live'}
+                          </code>
+                          <p className="text-[10px] text-[var(--signal-silver)] mt-1">Paste into the "Server" field in OBS</p>
+                        </div>
                         <button
                           type="button"
-                          className="text-xs text-[var(--signal-gold)] hover:underline"
+                          className="text-xs font-medium text-[var(--signal-gold)] hover:opacity-80 px-3 py-1.5 rounded-md bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] shadow-sm"
                           onClick={() => {
-                            const u = buildHlsPlaylistUrl(rtmpSegment)
-                            if (u)
-                              void navigator.clipboard.writeText(u).then(() => setGoLiveNotice({ type: 'ok', text: 'HLS URL copied.' }))
+                            const u = (import.meta as any).env?.VITE_RTMP_URL || 'rtmp://your-server/live'
+                            void navigator.clipboard.writeText(u).then(() => setGoLiveNotice({ type: 'ok', text: 'Server URL copied.' }))
                           }}
                         >
                           Copy
                         </button>
-                      )}
-                    </div>
-                    {broadcastStreamId && buildHlsPlaylistUrl(rtmpSegment) ? (
-                      <code className="block w-full px-3 py-2 rounded bg-[var(--signal-silver-light)]/50 text-sm text-[var(--signal-ink)] break-all">
-                        {buildHlsPlaylistUrl(rtmpSegment)}
-                      </code>
-                    ) : (
-                      <p className="text-xs text-[var(--signal-ink-muted)]">
-                        Set <code className="bg-[var(--signal-silver-light)]/50 px-1 rounded">VITE_HLS_BASE_URL</code> in{' '}
-                        <code className="bg-[var(--signal-silver-light)]/50 px-1 rounded">.env</code> to your HLS root (e.g.{' '}
-                        <code className="bg-[var(--signal-silver-light)]/50 px-1 rounded">http://127.0.0.1:8000</code> for local
-                        Node-Media-Server).
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-[var(--signal-silver)]">
-                      Base used: <code className="bg-[var(--signal-silver-light)]/40 px-1 rounded">{getHlsBaseUrl() || '(not set)'}</code>
-                      {import.meta.env.PROD && !getHlsBaseUrl() ? ' — set VITE_HLS_BASE_URL for production.' : null}
-                    </p>
-                    <button
-                      type="button"
-                      disabled={savingPlaybackUrl || !broadcastStreamId || !buildHlsPlaylistUrl(rtmpSegment)}
-                      onClick={async () => {
-                        const url = broadcastStreamId ? buildHlsPlaylistUrl(rtmpSegment) : null
-                        if (!url || !artistId) return
-                        if (import.meta.env.PROD && isLanOrLoopbackPlaybackUrl(url)) {
-                          setGoLiveNotice({
-                            type: 'err',
-                            text: 'That URL only works on your computer. Set VITE_HLS_BASE_URL on the host to a public HLS root (with CORS) before saving.',
-                          })
-                          return
-                        }
-                        setGoLiveNotice(null)
-                        setSavingPlaybackUrl(true)
-                        const { error } = await supabase.from('streams').update({ playback_url: url }).eq('id', broadcastStreamId)
-                        setSavingPlaybackUrl(false)
-                        if (error) {
-                          setGoLiveNotice({ type: 'err', text: error.message || 'Could not save playback URL.' })
-                          return
-                        }
-                        await refreshStreams(artistId)
-                        setGoLiveNotice({ type: 'ok', text: 'Saved playback URL to this stream. Fans can watch on the live page.' })
-                      }}
-                      className="mt-2 px-3 py-2 rounded-xl border border-[var(--signal-silver-light)] text-sm text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/20 disabled:opacity-50"
-                    >
-                      {savingPlaybackUrl ? 'Saving…' : 'Save playback URL to stream'}
-                    </button>
-                    {broadcastStreamId && streams.find((s) => s.id === broadcastStreamId)?.playback_url?.trim() ? (
-                      <p className="mt-2 text-xs text-[var(--signal-ink-muted)]">
-                        Stored in database:{' '}
-                        <span className="break-all">{streams.find((s) => s.id === broadcastStreamId)?.playback_url}</span>
-                      </p>
-                    ) : null}
-                    {import.meta.env.PROD &&
-                    broadcastStreamId &&
-                    selectedBroadcastStream?.playback_url?.trim() &&
-                    isLanOrLoopbackPlaybackUrl(selectedBroadcastStream.playback_url.trim()) ? (
-                      <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-[var(--signal-ink)]">
-                        <p className="mb-2">
-                          This stream still has a <strong>dev-only</strong> playback URL. Fans cannot load it from the live page
-                          until you save a public HLS URL (and set <code className="bg-[var(--signal-silver-light)]/50 px-1 rounded">VITE_HLS_BASE_URL</code> for
-                          constructed links).
-                        </p>
+                      </div>
+
+                      {/* Stream Key */}
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--signal-silver-light)]/20 border border-[var(--signal-silver-light)]/50">
+                        <div>
+                          <p className="text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide mb-0.5">Stream Key</p>
+                          <code className="text-sm text-[var(--signal-ink)]">
+                            ••••••••••••••••
+                          </code>
+                          <p className="text-[10px] text-[var(--signal-silver)] mt-1">Paste into the "Stream Key" field in OBS</p>
+                        </div>
                         <button
                           type="button"
-                          disabled={clearingBadPlaybackUrl || !artistId}
+                          className="text-xs font-medium text-[var(--signal-gold)] hover:opacity-80 px-3 py-1.5 rounded-md bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] shadow-sm"
+                          onClick={() => {
+                            if (!rtmpSegment) return
+                            void navigator.clipboard.writeText(rtmpSegment).then(() => setGoLiveNotice({ type: 'ok', text: 'Stream key copied. Keep this secret!' }))
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* STEP 2: Go Live */}
+                  <div className="pt-4 border-t border-[var(--signal-silver-light)]/50">
+                    <h3 className="text-sm font-medium text-[var(--signal-ink)] mb-2 flex items-center gap-2">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[var(--signal-silver-light)]/50 text-[10px]">2</span>
+                      Go live on Signal
+                    </h3>
+                    <div className="pl-7">
+                      <p className="text-xs text-[var(--signal-ink-muted)] mb-3">
+                        Start streaming in OBS first. Once your video appears in the Streams section below, click here to notify fans and appear on the discovery feed.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={
+                            togglingSignalLive ||
+                            !broadcastStreamId ||
+                            !artistId ||
+                            !!selectedBroadcastStream?.is_live
+                          }
                           onClick={async () => {
                             if (!broadcastStreamId || !artistId) return
                             setGoLiveNotice(null)
-                            setClearingBadPlaybackUrl(true)
+                            setTogglingSignalLive(true)
+                            const now = new Date().toISOString()
                             const { error } = await supabase
                               .from('streams')
-                              .update({ playback_url: null })
+                              .update({ is_live: true, started_at: now, ended_at: null })
                               .eq('id', broadcastStreamId)
-                            setClearingBadPlaybackUrl(false)
+                            setTogglingSignalLive(false)
                             if (error) {
-                              setGoLiveNotice({ type: 'err', text: error.message || 'Could not clear URL.' })
+                              setGoLiveNotice({ type: 'err', text: error.message || 'Could not update live status.' })
                               return
                             }
                             await refreshStreams(artistId)
-                            setGoLiveNotice({ type: 'ok', text: 'Removed dev-only playback URL from this stream.' })
+                            setGoLiveNotice({
+                              type: 'ok',
+                              text: 'You show as live on your profile and in the feed. Share your /live link with fans.',
+                            })
                           }}
-                          className="px-2.5 py-1.5 rounded-lg border border-amber-600/50 text-[var(--signal-ink)] hover:bg-amber-500/15 disabled:opacity-50"
+                          className="px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 shadow-sm"
                         >
-                          {clearingBadPlaybackUrl ? 'Clearing…' : 'Clear dev-only URL from stream'}
+                          {togglingSignalLive ? 'Updating…' : 'Show as live on Signal'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            togglingSignalLive ||
+                            !broadcastStreamId ||
+                            !artistId ||
+                            !selectedBroadcastStream?.is_live
+                          }
+                          onClick={async () => {
+                            if (!broadcastStreamId || !artistId) return
+                            setGoLiveNotice(null)
+                            setTogglingSignalLive(true)
+                            const { error } = await supabase
+                              .from('streams')
+                              .update({ is_live: false, ended_at: new Date().toISOString() })
+                              .eq('id', broadcastStreamId)
+                            setTogglingSignalLive(false)
+                            if (error) {
+                              setGoLiveNotice({ type: 'err', text: error.message || 'Could not end live status.' })
+                              return
+                            }
+                            await refreshStreams(artistId)
+                            setGoLiveNotice({ type: 'ok', text: 'Live status ended on Signal.' })
+                          }}
+                          className="px-4 py-2 rounded-xl border border-[var(--signal-silver-light)] text-sm font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/20 disabled:opacity-50"
+                        >
+                          End stream
                         </button>
                       </div>
-                    ) : null}
-                  </div>
-                  <div className="rounded-xl border border-[var(--signal-gold)]/30 bg-[var(--signal-gold)]/5 p-3 space-y-2">
-                    <p className="text-xs font-medium text-[var(--signal-ink)]">Visibility on Signal</p>
-                    <p className="text-xs text-[var(--signal-ink-muted)]">
-                      After OBS is streaming, turn this <strong className="text-[var(--signal-ink)]">on</strong> so fans see you on
-                      the <strong className="text-[var(--signal-ink)]">discovery feed</strong> and your{' '}
-                      <strong className="text-[var(--signal-ink)]">profile</strong>. Turn it off when you end the stream.
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <button
-                        type="button"
-                        disabled={
-                          togglingSignalLive ||
-                          !broadcastStreamId ||
-                          !artistId ||
-                          !!selectedBroadcastStream?.is_live
-                        }
-                        onClick={async () => {
-                          if (!broadcastStreamId || !artistId) return
-                          setGoLiveNotice(null)
-                          setTogglingSignalLive(true)
-                          const now = new Date().toISOString()
-                          const { error } = await supabase
-                            .from('streams')
-                            .update({ is_live: true, started_at: now, ended_at: null })
-                            .eq('id', broadcastStreamId)
-                          setTogglingSignalLive(false)
-                          if (error) {
-                            setGoLiveNotice({ type: 'err', text: error.message || 'Could not update live status.' })
-                            return
-                          }
-                          await refreshStreams(artistId)
-                          setGoLiveNotice({
-                            type: 'ok',
-                            text: 'You show as live on your profile and in the feed. Share your /live link with fans.',
-                          })
-                        }}
-                        className="px-3 py-2 rounded-xl bg-red-600 text-white text-sm hover:opacity-90 disabled:opacity-50"
-                      >
-                        {togglingSignalLive ? 'Updating…' : 'Show as live on Signal'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          togglingSignalLive ||
-                          !broadcastStreamId ||
-                          !artistId ||
-                          !selectedBroadcastStream?.is_live
-                        }
-                        onClick={async () => {
-                          if (!broadcastStreamId || !artistId) return
-                          setGoLiveNotice(null)
-                          setTogglingSignalLive(true)
-                          const { error } = await supabase
-                            .from('streams')
-                            .update({ is_live: false, ended_at: new Date().toISOString() })
-                            .eq('id', broadcastStreamId)
-                          setTogglingSignalLive(false)
-                          if (error) {
-                            setGoLiveNotice({ type: 'err', text: error.message || 'Could not end live status.' })
-                            return
-                          }
-                          await refreshStreams(artistId)
-                          setGoLiveNotice({ type: 'ok', text: 'Live status ended on Signal.' })
-                        }}
-                        className="px-3 py-2 rounded-xl border border-[var(--signal-silver-light)] text-sm text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/20 disabled:opacity-50"
-                      >
-                        End on Signal
-                      </button>
                     </div>
                   </div>
                 </>
@@ -1284,15 +1197,25 @@ export function Dashboard() {
           </details>
         )}
 
-        {/* Streams: image-first cards + camera auto-rotate */}
-        <section className="mb-[var(--space-2xl)]">
-          <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Streams</h2>
+        {artistId && activeTab === 'overview' && (
+          <details className="group/streams mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+          <summary
+            className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            <span className="truncate">Streams</span>
+            <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+              <span className="group-open/streams:hidden">Expand</span>
+              <span className="hidden group-open/streams:inline">Collapse</span>
+            </span>
+          </summary>
+          <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
           {streams.length === 0 ? (
-            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm">
+            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-8 text-center text-[var(--signal-ink-muted)] text-sm mt-3">
               No streams yet. Go live from your broadcast tool and they’ll appear here.
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 mt-3">
               {streams.map((s) => {
                 const playbackSrc = resolveStreamPlaybackUrl({
                   id: s.id,
@@ -1304,7 +1227,8 @@ export function Dashboard() {
                   key={s.id}
                   className="group rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] transition-shadow hover:shadow-md"
                 >
-                  <div className="relative aspect-[3/4] bg-black overflow-hidden">
+                  {/* 16:9 matches typical OBS output; full-width row so preview uses the whole content column (controls stay below, not beside). */}
+                  <div className="relative aspect-video w-full bg-black overflow-hidden">
                     {playbackSrc ? (
                       <HlsVideo
                         src={playbackSrc}
@@ -1348,20 +1272,87 @@ export function Dashboard() {
               })}
             </div>
           )}
-        </section>
+          </div>
+        </details>
+        )}
 
         {/* Fan analytics (placeholder) */}
-        <section className="mb-[var(--space-2xl)]">
-          <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Audience & sales</h2>
-          <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-6 text-center">
-            <p className="text-[var(--signal-ink-muted)] text-sm mb-2">Fan analytics, track sales, and audience data.</p>
-            <p className="text-xs text-[var(--signal-silver)]">Connect payouts and sync your catalogue to see revenue and subscriber counts here.</p>
+        {artistId && activeTab === 'overview' && (
+          <details className="group/audience mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+          <summary
+            className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            <span className="truncate">Audience &amp; sales</span>
+            <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+              <span className="group-open/audience:hidden">Expand</span>
+              <span className="hidden group-open/audience:inline">Collapse</span>
+            </span>
+          </summary>
+          <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
+          
+          {salesLoading ? (
+            <p className="text-sm text-[var(--signal-ink-muted)] mt-3">Loading sales…</p>
+          ) : sales.length === 0 ? (
+            <div className="rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] p-6 text-center mt-3">
+              <p className="text-[var(--signal-ink-muted)] text-sm mb-2">No sales yet.</p>
+              <p className="text-xs text-[var(--signal-silver)]">Connect payouts and sync your catalogue to see revenue here.</p>
+            </div>
+          ) : (
+            <ul className="space-y-2 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] divide-y divide-[var(--signal-silver-light)] mt-3">
+              {sales.map((sale) => {
+                const user = sale.users
+                const title = sale.products?.title ?? (sale.type === 'tip' ? 'Tip' : sale.type === 'subscription' ? 'Membership' : 'Purchase')
+                const when = new Date(sale.created_at).toLocaleString(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })
+                return (
+                  <li key={sale.id} className="flex gap-3 p-4">
+                    <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden bg-[var(--signal-silver-light)]/50 border border-[var(--signal-silver-light)]">
+                      {user?.avatar_url ? (
+                        <img src={user.avatar_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center text-[10px] text-[var(--signal-ink-muted)]">
+                          —
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{title}</p>
+                      <p className="text-xs text-[var(--signal-ink-muted)] mt-0.5">
+                        {when} · {formatGbp(sale.amount_cents)}
+                        {sale.type !== 'purchase' ? ` · ${sale.type}` : ''}
+                      </p>
+                      {user && (
+                        <p className="text-xs text-[var(--signal-ink)] mt-1 inline-block">
+                          Bought by: {user.full_name || 'Anonymous Fan'}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
           </div>
-        </section>
+        </details>
+        )}
 
         {/* Events */}
-        <section className="mb-[var(--space-2xl)]">
-          <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Events</h2>
+        {artistId && activeTab === 'content' && (
+          <details className="group/events mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+          <summary
+            className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            <span className="truncate">Events</span>
+            <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+              <span className="group-open/events:hidden">Expand</span>
+              <span className="hidden group-open/events:inline">Collapse</span>
+            </span>
+          </summary>
+          <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)] [&>*:first-child]:mt-3">
           {eventFormError && addEventOpen && (
             <p className="mb-2 text-sm text-red-600" role="alert">
               {eventFormError}
@@ -1463,7 +1454,7 @@ export function Dashboard() {
                 >
                   <div className="relative aspect-video bg-[var(--signal-silver-light)]/40">
                     {evCardImg ? (
-                      <img src={evCardImg} alt="" className="absolute inset-0 h-full w-full object-contain object-center bg-[var(--signal-silver-light)]/30" />
+                      <img src={evCardImg} alt="" className="absolute inset-0 h-full w-full object-cover object-center bg-[var(--signal-silver-light)]/30" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center p-4">
                         <span className="text-sm font-medium text-[var(--signal-ink)] text-center">{ev.title}</span>
@@ -1602,11 +1593,24 @@ export function Dashboard() {
               })}
             </div>
           ) : null}
-        </section>
+          </div>
+        </details>
+        )}
 
         {/* Subscription tiers (memberships) */}
-        <section className="mb-[var(--space-2xl)]">
-          <h2 className="text-lg font-medium text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>Subscription tiers</h2>
+        {artistId && activeTab === 'content' && (
+          <details className="group/tiers mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+          <summary
+            className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            <span className="truncate">Subscription tiers</span>
+            <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+              <span className="group-open/tiers:hidden">Expand</span>
+              <span className="hidden group-open/tiers:inline">Collapse</span>
+            </span>
+          </summary>
+          <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)] [&>*:first-child]:mt-3">
           {tierFormError && addTierOpen && (
             <p className="mb-2 text-sm text-red-600" role="alert">
               {tierFormError}
@@ -1623,7 +1627,7 @@ export function Dashboard() {
               />
               <input
                 type="text"
-                placeholder="Monthly price (e.g. 9.99)"
+                placeholder="Monthly price in £ (e.g. 9.99)"
                 value={newTierPrice}
                 onChange={(e) => setNewTierPrice(e.target.value)}
                 className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm"
@@ -1702,7 +1706,7 @@ export function Dashboard() {
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
                         <span className="text-sm font-medium text-[var(--signal-ink)]">{m.title}</span>
-                        <span className="text-[var(--signal-gold)] text-sm mt-1">${(m.price_cents / 100).toFixed(2)}/mo</span>
+                        <span className="text-[var(--signal-gold)] text-sm mt-1">{formatGbp(m.price_cents)}/mo</span>
                       </div>
                     )}
                     {catalogBusy?.kind === 'membership' && catalogBusy.id === m.id && (
@@ -1713,7 +1717,7 @@ export function Dashboard() {
                   </div>
                   <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
                     <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{m.title}</p>
-                    <p className="text-xs text-[var(--signal-gold)]">${(m.price_cents / 100).toFixed(2)}/mo</p>
+                    <p className="text-xs text-[var(--signal-gold)]">{formatGbp(m.price_cents)}/mo</p>
                     <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
                       Creative direction (optional) — expanded by LLM for Generate / Clean
                     </label>
@@ -1835,16 +1839,27 @@ export function Dashboard() {
               })}
             </div>
           ) : null}
-        </section>
+          </div>
+        </details>
+        )}
 
         {/* Catalog: tracks (live DJ shop) + merch & tickets */}
-        <section className="mb-[var(--space-2xl)]">
-          <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        {artistId && activeTab === 'content' && (
+          <details className="group/catalog mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]">
+          <summary
+            className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-medium text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            <span className="truncate">Catalog</span>
+            <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+              <span className="group-open/catalog:hidden">Expand</span>
+              <span className="hidden group-open/catalog:inline">Collapse</span>
+            </span>
+          </summary>
+          <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mt-3">
             <div>
-              <h2 className="text-lg font-medium text-[var(--signal-ink)]" style={{ fontFamily: 'var(--font-display)' }}>
-                Catalog
-              </h2>
-              <p className="text-xs text-[var(--signal-ink-muted)] mt-1 max-w-xl" style={{ fontFamily: 'var(--font-body)' }}>
+              <p className="text-xs text-[var(--signal-ink-muted)] max-w-xl" style={{ fontFamily: 'var(--font-body)' }}>
                 <strong className="text-[var(--signal-ink)]">Tracks</strong> are what fans buy from{' '}
                 <strong className="text-[var(--signal-ink)]">More → Track</strong> while you&apos;re live. Add merch and event tickets
                 for your shop too.
@@ -1888,7 +1903,7 @@ export function Dashboard() {
           <input
             ref={catalogFileRef}
             type="file"
-            accept="image/*"
+            accept={pendingCatalogUpload.current?.kind === 'product_file' ? 'audio/*' : 'image/*'}
             className="hidden"
             onChange={async (e) => {
               const file = e.target.files?.[0]
@@ -1897,6 +1912,26 @@ export function Dashboard() {
               pendingCatalogUpload.current = null
               if (!file || !artistId || !pending) return
               setCatalogImageNotice(null)
+              
+              if (pending.kind === 'product_file') {
+                const ext = file.name.split('.').pop()?.toLowerCase() || 'mp3'
+                const path = `${artistId}/${pending.id}/${crypto.randomUUID()}.${ext}`
+                setCatalogImageNotice('Uploading audio file...')
+                const { error: upErr } = await supabase.storage.from('product_files').upload(path, file, { upsert: true })
+                if (upErr) {
+                  setCatalogImageNotice(`Audio upload failed: ${upErr.message}`)
+                  return
+                }
+                const { error: dbErr } = await supabase.from('products').update({ file_url: path, updated_at: new Date().toISOString() }).eq('id', pending.id).eq('artist_id', artistId)
+                if (dbErr) {
+                  setCatalogImageNotice(`Database error: ${dbErr.message}`)
+                  return
+                }
+                await reloadProducts(artistId)
+                setCatalogImageNotice('Audio file saved successfully.')
+                return
+              }
+
               const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
               const sub =
                 pending.kind === 'product'
@@ -1958,7 +1993,7 @@ export function Dashboard() {
                 onChange={(e) => setNewProductTitle(e.target.value)}
                 className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2"
               />
-              <input type="text" placeholder="Price (e.g. 9.99)" value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
+              <input type="text" placeholder="Price in £ (e.g. 9.99)" value={newProductPrice} onChange={(e) => setNewProductPrice(e.target.value)} className="w-full rounded-xl border border-[var(--signal-silver-light)] px-3 py-2 text-sm mb-2" />
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -2077,10 +2112,12 @@ export function Dashboard() {
             ) : null}
             {merchAndTicketsCatalog.map((p) => renderCatalogProductCard(p))}
           </div>
-        </section>
+          </div>
+        </details>
+        )}
 
         {/* Payouts — collapsed by default */}
-        {artistId && (
+        {artistId && activeTab === 'settings' && (
           <details
             className="group/payouts mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
             open={payoutsSectionOpen}
@@ -2127,7 +2164,7 @@ export function Dashboard() {
           </details>
         )}
 
-        {/* Connect your music — collapsed by default */}
+        {artistId && activeTab === 'settings' && (
         <details
           className="group/music mb-[var(--space-2xl)] rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
           open={musicSectionOpen}
@@ -2229,6 +2266,7 @@ export function Dashboard() {
             )}
           </div>
         </details>
+        )}
       </div>
     </div>
   )
@@ -2239,7 +2277,7 @@ type FanTxRow = {
   type: string
   amount_cents: number
   created_at: string
-  products: { id: string; title: string; image_url: string | null; type: string } | null
+  products: { id: string; title: string; image_url: string | null; type: string; file_url: string | null } | null
   artists: { id: string; display_name: string; avatar_url: string | null } | null
 }
 
@@ -2249,10 +2287,6 @@ type FanSubRow = {
   created_at: string
   artists: { id: string; display_name: string; avatar_url: string | null } | null
   memberships: { title: string; price_cents: number } | null
-}
-
-function formatUsd(cents: number) {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
 
 function transactionLabel(type: string, productTitle: string | null) {
@@ -2286,7 +2320,7 @@ function FanDashboard() {
       .from('transactions')
       .select(
         `id, type, amount_cents, created_at,
-        products ( id, title, image_url, type ),
+        products ( id, title, image_url, type, file_url ),
         artists ( id, display_name, avatar_url )`
       )
       .eq('user_id', user.id)
@@ -2362,13 +2396,44 @@ function FanDashboard() {
         </header>
 
         <div className="space-y-8">
-          <FanDiscoverSpotlight />
+          <details
+            open
+            className="group/fanspotlight rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
+          >
+            <summary
+              className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-semibold text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              <span className="truncate">Discover spotlight</span>
+              <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+                <span className="group-open/fanspotlight:hidden">Expand</span>
+                <span className="hidden group-open/fanspotlight:inline">Collapse</span>
+              </span>
+            </summary>
+            <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
+              <div className="pt-3">
+                <FanDiscoverSpotlight />
+              </div>
+            </div>
+          </details>
 
-          <section aria-labelledby="fan-library-heading">
-            <h2 id="fan-library-heading" className="text-lg font-semibold text-[var(--signal-ink)] mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              Your library
-            </h2>
-            <p className="text-sm text-[var(--signal-ink-muted)] mb-4">
+          <details
+            className="group/fanlibrary rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
+            aria-labelledby="fan-library-heading"
+          >
+            <summary
+              id="fan-library-heading"
+              className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-semibold text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              <span className="truncate">Your library</span>
+              <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+                <span className="group-open/fanlibrary:hidden">Expand</span>
+                <span className="hidden group-open/fanlibrary:inline">Collapse</span>
+              </span>
+            </summary>
+            <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
+            <p className="text-sm text-[var(--signal-ink-muted)] pt-3 mb-4">
               Items from checkout and tips (mock or live Stripe) show here once recorded.
             </p>
             {txLoading ? (
@@ -2405,7 +2470,7 @@ function FanDashboard() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{title}</p>
                         <p className="text-xs text-[var(--signal-ink-muted)] mt-0.5">
-                          {when} · {formatUsd(tx.amount_cents)}
+                          {when} · {formatGbp(tx.amount_cents)}
                           {tx.type !== 'purchase' ? ` · ${tx.type}` : ''}
                         </p>
                         {artist && (
@@ -2416,24 +2481,56 @@ function FanDashboard() {
                             {artist.display_name}
                           </Link>
                         )}
+                        {tx.products?.file_url && (
+                          <div className="mt-2">
+                            <button
+                              onClick={async () => {
+                                const { data, error } = await supabase.storage
+                                  .from('product_files')
+                                  .createSignedUrl(tx.products!.file_url!, 60)
+                                if (error || !data) {
+                                  alert('Could not generate download link. Ensure you are signed in.')
+                                  return
+                                }
+                                window.open(data.signedUrl, '_blank')
+                              }}
+                              className="text-xs px-3 py-1.5 rounded-md bg-[var(--signal-ink)] text-white hover:opacity-90 font-medium"
+                            >
+                              Download Audio
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </li>
                   )
                 })}
               </ul>
             )}
-          </section>
+            </div>
+          </details>
 
-          <section aria-labelledby="fan-memberships-heading">
-            <h2 id="fan-memberships-heading" className="text-lg font-semibold text-[var(--signal-ink)] mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              Memberships
-            </h2>
+          <details
+            className="group/fanmemberships rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] overflow-hidden bg-[var(--signal-white-pure)]"
+            aria-labelledby="fan-memberships-heading"
+          >
+            <summary
+              id="fan-memberships-heading"
+              className="cursor-pointer select-none list-none px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 text-lg font-semibold text-[var(--signal-ink)] hover:bg-[var(--signal-silver-light)]/15 [&::-webkit-details-marker]:hidden"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              <span className="truncate">Memberships</span>
+              <span className="flex items-center gap-2 shrink-0 text-[11px] font-normal text-[var(--signal-ink-muted)]">
+                <span className="group-open/fanmemberships:hidden">Expand</span>
+                <span className="hidden group-open/fanmemberships:inline">Collapse</span>
+              </span>
+            </summary>
+            <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
             {subLoading ? (
-              <p className="text-sm text-[var(--signal-ink-muted)]">Loading memberships…</p>
+              <p className="text-sm text-[var(--signal-ink-muted)] pt-3">Loading memberships…</p>
             ) : subscriptions.length === 0 ? (
-              <p className="text-sm text-[var(--signal-ink-muted)]">You’re not subscribed to any artist tiers yet.</p>
+              <p className="text-sm text-[var(--signal-ink-muted)] pt-3">You’re not subscribed to any artist tiers yet.</p>
             ) : (
-              <ul className="space-y-2 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] divide-y divide-[var(--signal-silver-light)]">
+              <ul className="space-y-2 rounded-[var(--radius-card)] border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] divide-y divide-[var(--signal-silver-light)] mt-3">
                 {subscriptions.map((sub) => {
                   const artist = sub.artists
                   const tier = sub.memberships?.title ?? 'Membership'
@@ -2462,7 +2559,8 @@ function FanDashboard() {
                 })}
               </ul>
             )}
-          </section>
+            </div>
+          </details>
 
           <div className="space-y-4">
             <Link

@@ -4,7 +4,8 @@
 import { useState } from 'react'
 import { apiUrl, getSession } from '../lib/api'
 import { supabase } from '../lib/supabase'
-import { createMockPurchase } from '../lib/commerce'
+import { createMockPurchase, isDemoCommerceArtistId } from '../lib/commerce'
+import { formatGbp } from '../lib/currency'
 
 export type CheckoutType = 'track' | 'ticket' | 'membership' | 'ppv'
 
@@ -115,6 +116,7 @@ export function CheckoutDrawer({
           title,
           amountCents,
           type: 'membership',
+          membershipId: membershipId ?? undefined,
         })
         if (!res.success) {
           setError(res.error || 'Mock checkout failed')
@@ -156,14 +158,20 @@ export function CheckoutDrawer({
           {title}
         </h3>
         <p className="text-sm text-[var(--signal-ink-muted)] mb-4">
-          ${(amountCents / 100).toFixed(2)} — Pay securely with card.
+          {formatGbp(amountCents)} — Pay securely with card.
         </p>
+        {isDemoCommerceArtistId(artistId) && (
+          <p className="text-xs text-[var(--signal-ink-muted)] mb-3">
+            Demo artist — use <strong className="text-[var(--signal-ink)]">Mock</strong> to simulate checkout. Card payment needs a real artist on Signal.
+          </p>
+        )}
         {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
         <div className="flex gap-2">
           <button
             type="button"
             onClick={handleStripeCheckout}
-            disabled={loading}
+            disabled={loading || isDemoCommerceArtistId(artistId)}
+            title={isDemoCommerceArtistId(artistId) ? 'Not available for demo profiles' : undefined}
             className="flex-1 py-3 rounded-xl bg-[var(--signal-gold)] text-white font-medium disabled:opacity-50"
           >
             {loading ? 'Redirecting…' : 'Pay with card'}

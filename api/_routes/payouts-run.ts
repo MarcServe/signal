@@ -47,7 +47,7 @@ export default async function handler(
     try {
       const transfer = await stripe.transfers.create({
         amount: balance,
-        currency: 'usd',
+        currency: 'gbp',
         destination: row.stripe_account_id,
       })
       await supabaseAdmin.from('payout_runs').insert({
