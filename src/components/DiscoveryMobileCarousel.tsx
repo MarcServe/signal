@@ -163,7 +163,7 @@ export function DiscoveryMobileCarousel({ items }: { items: FeedItem[] }) {
     <div className={`flex h-full flex-1 flex-col md:hidden ${slideMinH}`}>
       <div
         ref={scrollerRef}
-        className={`flex h-full min-h-0 flex-1 flex-row items-stretch gap-4 overflow-x-auto overflow-y-hidden scroll-smooth snap-x snap-mandatory px-[var(--gutter)] pb-0 no-scrollbar [-webkit-overflow-scrolling:touch] ${slideMinH}`}
+        className={`flex h-full min-h-0 flex-1 flex-row items-stretch gap-0 overflow-x-auto overflow-y-hidden scroll-smooth snap-x snap-mandatory px-0 pb-0 no-scrollbar [-webkit-overflow-scrolling:touch] ${slideMinH}`}
         role="region"
         aria-label="Discover — swipe sideways"
         onPointerDown={bumpUserPause}
@@ -171,7 +171,7 @@ export function DiscoveryMobileCarousel({ items }: { items: FeedItem[] }) {
         {loopItems.map((item, i) => (
           <div
             key={loopKeys[i]}
-            className={`flex h-full min-w-full w-full max-w-[420px] shrink-0 snap-center snap-always ${slideMinH}`}
+            className={`flex h-full min-w-full w-full shrink-0 snap-center snap-always ${slideMinH}`}
           >
             <DiscoveryCard item={item} layout="mobileFill" />
           </div>

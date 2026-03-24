@@ -33,7 +33,7 @@ export function DiscoveryCard({ item, layout = 'default' }: DiscoveryCardProps) 
       onClick={handleTap}
       className={`text-left rounded-[var(--radius-card)] overflow-hidden bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)] focus:ring-offset-2 ${
         fill
-          ? 'flex h-full w-full min-h-[calc(100svh-3.5rem)] flex-col'
+          ? 'flex h-full w-full min-h-[calc(100svh-3.5rem)] flex-col max-md:rounded-none max-md:border-x-0 max-md:focus:ring-offset-0'
           : 'w-full'
       }`}
       style={{ transition: 'transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out)' }}
