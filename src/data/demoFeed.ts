@@ -1,7 +1,6 @@
 import type { FeedItem } from '../types/feed'
 
 /** Homepage 5 cards use images from public/demo/ (saved in repo for reuse). */
-const now = new Date().toISOString()
 const bump = (ms: number) => new Date(Date.now() + ms).toISOString()
 
 /**
