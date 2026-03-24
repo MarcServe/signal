@@ -137,6 +137,10 @@ export function Dashboard() {
   const [payoutsSectionOpen, setPayoutsSectionOpen] = useState(false)
   const [musicSectionOpen, setMusicSectionOpen] = useState(false)
   const [goLiveSectionOpen, setGoLiveSectionOpen] = useState(false)
+  /** Baked in at Vite build time. */
+  const rtmpIngestDisplay =
+    String((import.meta as { env?: { VITE_RTMP_URL?: string } }).env?.VITE_RTMP_URL ?? '').trim() ||
+    'rtmp://your-server/live'
   const [backfillBusy, setBackfillBusy] = useState(false)
   const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null)
   const [backfillNotice, setBackfillNotice] = useState<string | null>(null)
@@ -557,21 +561,11 @@ export function Dashboard() {
             </span>
           </div>
           <p className="text-xs text-[var(--signal-gold)]">{formatGbp(p.price_cents ?? 0)}</p>
-          <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-            Creative direction (optional) — expanded by LLM for Generate / Clean
-          </label>
-          <textarea
-            value={catalogPrompts[`product:${p.id}`] ?? ''}
-            onChange={(e) => setCatalogPrompts((prev) => ({ ...prev, [`product:${p.id}`]: e.target.value }))}
-            placeholder="e.g. Black vinyl on marble, gold foil, moody club lighting…"
-            rows={2}
-            disabled={catalogBusy !== null}
-            className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
-          />
           <div className="flex flex-wrap gap-2">
             {p.type === 'track' && (
               <button
                 type="button"
+                disabled={catalogBusy !== null}
                 onClick={() => {
                   pendingCatalogUpload.current = { kind: 'product_file', id: p.id }
                   catalogFileRef.current?.click()
@@ -592,96 +586,118 @@ export function Dashboard() {
             >
               Upload Cover
             </button>
-            <button
-              type="button"
-              disabled={catalogBusy !== null || !artistId}
-              onClick={async () => {
-                if (!artistId) return
-                setCatalogImageNotice(null)
-                setCatalogBusy({ kind: 'product', id: p.id })
-                try {
-                  const session = await getSession()
-                  if (!session) {
-                    setCatalogImageNotice('Sign in again to generate.')
-                    return
-                  }
-                  const prompt = catalogPrompts[`product:${p.id}`]?.trim()
-                  const res = await fetch(apiUrl('/product-image-generate'), {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      Authorization: `Bearer ${session.access_token}`,
-                    },
-                    body: JSON.stringify(
-                      catalogImagePayload(artistId, 'product', p.id, {
-                        creative_prompt: prompt || undefined,
-                      })
-                    ),
-                  })
-                  const raw = await res.text()
-                  if (!res.ok) {
-                    setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
-                    return
-                  }
-                  await reloadProducts(artistId)
-                  setCatalogImageNotice('Image generated from your description.')
-                } catch {
-                  setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                } finally {
-                  setCatalogBusy(null)
-                }
-              }}
-              className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {catalogBusy?.kind === 'product' && catalogBusy.id === p.id ? '…' : 'Generate'}
-            </button>
-            {pCleanSource && (
-              <button
-                type="button"
-                disabled={catalogBusy !== null || !artistId}
-                onClick={async () => {
-                  if (!artistId || !pCleanSource) return
-                  setCatalogImageNotice(null)
-                  setCatalogBusy({ kind: 'product', id: p.id })
-                  try {
-                    const session = await getSession()
-                    if (!session) {
-                      setCatalogImageNotice('Sign in again.')
-                      return
-                    }
-                    const hint = catalogPrompts[`product:${p.id}`]?.trim()
-                    const res = await fetch(apiUrl('/product-image-generate'), {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${session.access_token}`,
-                      },
-                      body: JSON.stringify(
-                        catalogImagePayload(artistId, 'product', p.id, {
-                          source_image_url: pCleanSource,
-                          creative_prompt: hint || undefined,
-                        })
-                      ),
-                    })
-                    const raw = await res.text()
-                    if (!res.ok) {
-                      setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
-                      return
-                    }
-                    await reloadProducts(artistId)
-                    setCatalogImageNotice('Photo cleaned and standardized.')
-                  } catch {
-                    setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                  } finally {
-                    setCatalogBusy(null)
-                  }
-                }}
-                className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
-              >
-                Clean &amp; standardize
-              </button>
-            )}
           </div>
+          <details className="group/aiimg rounded-lg border border-[var(--signal-silver-light)]/70 bg-[var(--signal-silver-light)]/10">
+            <summary className="cursor-pointer select-none list-none px-2 py-2 text-xs font-medium text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+              <span>AI: generate or clean image</span>
+              <span className="text-[10px] shrink-0 opacity-80">
+                <span className="group-open/aiimg:hidden">Show</span>
+                <span className="hidden group-open/aiimg:inline">Hide</span>
+              </span>
+            </summary>
+            <div className="space-y-2 border-t border-[var(--signal-silver-light)]/50 px-2 pb-2 pt-2">
+              <textarea
+                value={catalogPrompts[`product:${p.id}`] ?? ''}
+                onChange={(e) => setCatalogPrompts((prev) => ({ ...prev, [`product:${p.id}`]: e.target.value }))}
+                placeholder="e.g. Black vinyl on marble, gold foil, moody club lighting…"
+                rows={2}
+                disabled={catalogBusy !== null}
+                aria-label="Optional notes for generated or cleaned cover image"
+                className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={catalogBusy !== null || !artistId}
+                  onClick={async () => {
+                    if (!artistId) return
+                    setCatalogImageNotice(null)
+                    setCatalogBusy({ kind: 'product', id: p.id })
+                    try {
+                      const session = await getSession()
+                      if (!session) {
+                        setCatalogImageNotice('Sign in again to generate.')
+                        return
+                      }
+                      const prompt = catalogPrompts[`product:${p.id}`]?.trim()
+                      const res = await fetch(apiUrl('/product-image-generate'), {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${session.access_token}`,
+                        },
+                        body: JSON.stringify(
+                          catalogImagePayload(artistId, 'product', p.id, {
+                            creative_prompt: prompt || undefined,
+                          })
+                        ),
+                      })
+                      const raw = await res.text()
+                      if (!res.ok) {
+                        setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
+                        return
+                      }
+                      await reloadProducts(artistId)
+                      setCatalogImageNotice('Image generated from your description.')
+                    } catch {
+                      setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                    } finally {
+                      setCatalogBusy(null)
+                    }
+                  }}
+                  className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {catalogBusy?.kind === 'product' && catalogBusy.id === p.id ? '…' : 'Generate'}
+                </button>
+                {pCleanSource && (
+                  <button
+                    type="button"
+                    disabled={catalogBusy !== null || !artistId}
+                    onClick={async () => {
+                      if (!artistId || !pCleanSource) return
+                      setCatalogImageNotice(null)
+                      setCatalogBusy({ kind: 'product', id: p.id })
+                      try {
+                        const session = await getSession()
+                        if (!session) {
+                          setCatalogImageNotice('Sign in again.')
+                          return
+                        }
+                        const hint = catalogPrompts[`product:${p.id}`]?.trim()
+                        const res = await fetch(apiUrl('/product-image-generate'), {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify(
+                            catalogImagePayload(artistId, 'product', p.id, {
+                              source_image_url: pCleanSource,
+                              creative_prompt: hint || undefined,
+                            })
+                          ),
+                        })
+                        const raw = await res.text()
+                        if (!res.ok) {
+                          setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
+                          return
+                        }
+                        await reloadProducts(artistId)
+                        setCatalogImageNotice('Photo cleaned and standardized.')
+                      } catch {
+                        setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                      } finally {
+                        setCatalogBusy(null)
+                      }
+                    }}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
+                  >
+                    Clean &amp; standardize
+                  </button>
+                )}
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     )
@@ -1073,17 +1089,16 @@ export function Dashboard() {
                       <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--signal-silver-light)]/20 border border-[var(--signal-silver-light)]/50">
                         <div>
                           <p className="text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide mb-0.5">Server URL</p>
-                          <code className="text-sm text-[var(--signal-ink)]">
-                            {(import.meta as any).env?.VITE_RTMP_URL || 'rtmp://your-server/live'}
-                          </code>
+                          <code className="text-sm text-[var(--signal-ink)] break-all">{rtmpIngestDisplay}</code>
                           <p className="text-[10px] text-[var(--signal-silver)] mt-1">Paste into the "Server" field in OBS</p>
                         </div>
                         <button
                           type="button"
                           className="text-xs font-medium text-[var(--signal-gold)] hover:opacity-80 px-3 py-1.5 rounded-md bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] shadow-sm"
                           onClick={() => {
-                            const u = (import.meta as any).env?.VITE_RTMP_URL || 'rtmp://your-server/live'
-                            void navigator.clipboard.writeText(u).then(() => setGoLiveNotice({ type: 'ok', text: 'Server URL copied.' }))
+                            void navigator.clipboard.writeText(rtmpIngestDisplay).then(() =>
+                              setGoLiveNotice({ type: 'ok', text: 'Server URL copied.' })
+                            )
                           }}
                         >
                           Copy
@@ -1472,19 +1487,6 @@ export function Dashboard() {
                       {new Date(ev.starts_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                       {ev.venue ? ` · ${ev.venue}` : ''}
                     </p>
-                    <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Creative direction (optional) — expanded by LLM for Generate / Clean
-                    </label>
-                    <textarea
-                      value={catalogPrompts[`event:${ev.id}`] ?? ''}
-                      onChange={(e) =>
-                        setCatalogPrompts((prev) => ({ ...prev, [`event:${ev.id}`]: e.target.value }))
-                      }
-                      placeholder="e.g. Warehouse lights, gold typography feel (no text), crowd energy…"
-                      rows={2}
-                      disabled={catalogBusy !== null}
-                      className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
-                    />
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -1497,96 +1499,120 @@ export function Dashboard() {
                       >
                         Upload
                       </button>
-                      <button
-                        type="button"
-                        disabled={catalogBusy !== null || !artistId}
-                        onClick={async () => {
-                          if (!artistId) return
-                          setCatalogImageNotice(null)
-                          setCatalogBusy({ kind: 'event', id: ev.id })
-                          try {
-                            const session = await getSession()
-                            if (!session) {
-                              setCatalogImageNotice('Sign in again.')
-                              return
-                            }
-                            const prompt = catalogPrompts[`event:${ev.id}`]?.trim()
-                            const res = await fetch(apiUrl('/product-image-generate'), {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${session.access_token}`,
-                              },
-                              body: JSON.stringify(
-                                catalogImagePayload(artistId, 'event', ev.id, {
-                                  creative_prompt: prompt || undefined,
-                                })
-                              ),
-                            })
-                            const raw = await res.text()
-                            if (!res.ok) {
-                              setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
-                              return
-                            }
-                            await reloadEvents(artistId)
-                            setCatalogImageNotice('Event image generated.')
-                          } catch {
-                            setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                          } finally {
-                            setCatalogBusy(null)
-                          }
-                        }}
-                        className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
-                      >
-                        {catalogBusy?.kind === 'event' && catalogBusy.id === ev.id ? '…' : 'Generate'}
-                      </button>
-                      {evCleanSource && (
-                        <button
-                          type="button"
-                          disabled={catalogBusy !== null || !artistId}
-                          onClick={async () => {
-                            if (!artistId || !evCleanSource) return
-                            setCatalogImageNotice(null)
-                            setCatalogBusy({ kind: 'event', id: ev.id })
-                            try {
-                              const session = await getSession()
-                              if (!session) {
-                                setCatalogImageNotice('Sign in again.')
-                                return
-                              }
-                              const hint = catalogPrompts[`event:${ev.id}`]?.trim()
-                              const res = await fetch(apiUrl('/product-image-generate'), {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  Authorization: `Bearer ${session.access_token}`,
-                                },
-                                body: JSON.stringify(
-                                  catalogImagePayload(artistId, 'event', ev.id, {
-                                    source_image_url: evCleanSource,
-                                    creative_prompt: hint || undefined,
-                                  })
-                                ),
-                              })
-                              const raw = await res.text()
-                              if (!res.ok) {
-                                setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
-                                return
-                              }
-                              await reloadEvents(artistId)
-                              setCatalogImageNotice('Event image cleaned.')
-                            } catch {
-                              setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                            } finally {
-                              setCatalogBusy(null)
-                            }
-                          }}
-                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
-                        >
-                          Clean &amp; standardize
-                        </button>
-                      )}
                     </div>
+                    <details className="group/aiev rounded-lg border border-[var(--signal-silver-light)]/70 bg-[var(--signal-silver-light)]/10">
+                      <summary className="cursor-pointer select-none list-none px-2 py-2 text-xs font-medium text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+                        <span>AI: generate or clean image</span>
+                        <span className="text-[10px] shrink-0 opacity-80">
+                          <span className="group-open/aiev:hidden">Show</span>
+                          <span className="hidden group-open/aiev:inline">Hide</span>
+                        </span>
+                      </summary>
+                      <div className="space-y-2 border-t border-[var(--signal-silver-light)]/50 px-2 pb-2 pt-2">
+                        <textarea
+                          value={catalogPrompts[`event:${ev.id}`] ?? ''}
+                          onChange={(e) =>
+                            setCatalogPrompts((prev) => ({ ...prev, [`event:${ev.id}`]: e.target.value }))
+                          }
+                          placeholder="e.g. Warehouse lights, gold typography feel (no text), crowd energy…"
+                          rows={2}
+                          disabled={catalogBusy !== null}
+                          aria-label="Optional notes for generated or cleaned event image"
+                          className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={catalogBusy !== null || !artistId}
+                            onClick={async () => {
+                              if (!artistId) return
+                              setCatalogImageNotice(null)
+                              setCatalogBusy({ kind: 'event', id: ev.id })
+                              try {
+                                const session = await getSession()
+                                if (!session) {
+                                  setCatalogImageNotice('Sign in again.')
+                                  return
+                                }
+                                const prompt = catalogPrompts[`event:${ev.id}`]?.trim()
+                                const res = await fetch(apiUrl('/product-image-generate'), {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify(
+                                    catalogImagePayload(artistId, 'event', ev.id, {
+                                      creative_prompt: prompt || undefined,
+                                    })
+                                  ),
+                                })
+                                const raw = await res.text()
+                                if (!res.ok) {
+                                  setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
+                                  return
+                                }
+                                await reloadEvents(artistId)
+                                setCatalogImageNotice('Event image generated.')
+                              } catch {
+                                setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                              } finally {
+                                setCatalogBusy(null)
+                              }
+                            }}
+                            className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                          >
+                            {catalogBusy?.kind === 'event' && catalogBusy.id === ev.id ? '…' : 'Generate'}
+                          </button>
+                          {evCleanSource && (
+                            <button
+                              type="button"
+                              disabled={catalogBusy !== null || !artistId}
+                              onClick={async () => {
+                                if (!artistId || !evCleanSource) return
+                                setCatalogImageNotice(null)
+                                setCatalogBusy({ kind: 'event', id: ev.id })
+                                try {
+                                  const session = await getSession()
+                                  if (!session) {
+                                    setCatalogImageNotice('Sign in again.')
+                                    return
+                                  }
+                                  const hint = catalogPrompts[`event:${ev.id}`]?.trim()
+                                  const res = await fetch(apiUrl('/product-image-generate'), {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      Authorization: `Bearer ${session.access_token}`,
+                                    },
+                                    body: JSON.stringify(
+                                      catalogImagePayload(artistId, 'event', ev.id, {
+                                        source_image_url: evCleanSource,
+                                        creative_prompt: hint || undefined,
+                                      })
+                                    ),
+                                  })
+                                  const raw = await res.text()
+                                  if (!res.ok) {
+                                    setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
+                                    return
+                                  }
+                                  await reloadEvents(artistId)
+                                  setCatalogImageNotice('Event image cleaned.')
+                                } catch {
+                                  setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                                } finally {
+                                  setCatalogBusy(null)
+                                }
+                              }}
+                              className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
+                            >
+                              Clean &amp; standardize
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </details>
                   </div>
                 </div>
                 )
@@ -1718,19 +1744,6 @@ export function Dashboard() {
                   <div className="p-3 border-t border-[var(--signal-silver-light)]/80 space-y-2">
                     <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{m.title}</p>
                     <p className="text-xs text-[var(--signal-gold)]">{formatGbp(m.price_cents)}/mo</p>
-                    <label className="block text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide">
-                      Creative direction (optional) — expanded by LLM for Generate / Clean
-                    </label>
-                    <textarea
-                      value={catalogPrompts[`membership:${m.id}`] ?? ''}
-                      onChange={(e) =>
-                        setCatalogPrompts((prev) => ({ ...prev, [`membership:${m.id}`]: e.target.value }))
-                      }
-                      placeholder="e.g. Gold accent, backstage pass vibe, velvet texture…"
-                      rows={2}
-                      disabled={catalogBusy !== null}
-                      className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
-                    />
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -1743,96 +1756,120 @@ export function Dashboard() {
                       >
                         Upload
                       </button>
-                      <button
-                        type="button"
-                        disabled={catalogBusy !== null || !artistId}
-                        onClick={async () => {
-                          if (!artistId) return
-                          setCatalogImageNotice(null)
-                          setCatalogBusy({ kind: 'membership', id: m.id })
-                          try {
-                            const session = await getSession()
-                            if (!session) {
-                              setCatalogImageNotice('Sign in again.')
-                              return
-                            }
-                            const prompt = catalogPrompts[`membership:${m.id}`]?.trim()
-                            const res = await fetch(apiUrl('/product-image-generate'), {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${session.access_token}`,
-                              },
-                              body: JSON.stringify(
-                                catalogImagePayload(artistId, 'membership', m.id, {
-                                  creative_prompt: prompt || undefined,
-                                })
-                              ),
-                            })
-                            const raw = await res.text()
-                            if (!res.ok) {
-                              setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
-                              return
-                            }
-                            await reloadMemberships(artistId)
-                            setCatalogImageNotice('Tier image generated.')
-                          } catch {
-                            setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                          } finally {
-                            setCatalogBusy(null)
-                          }
-                        }}
-                        className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
-                      >
-                        {catalogBusy?.kind === 'membership' && catalogBusy.id === m.id ? '…' : 'Generate'}
-                      </button>
-                      {mCleanSource && (
-                        <button
-                          type="button"
-                          disabled={catalogBusy !== null || !artistId}
-                          onClick={async () => {
-                            if (!artistId || !mCleanSource) return
-                            setCatalogImageNotice(null)
-                            setCatalogBusy({ kind: 'membership', id: m.id })
-                            try {
-                              const session = await getSession()
-                              if (!session) {
-                                setCatalogImageNotice('Sign in again.')
-                                return
-                              }
-                              const hint = catalogPrompts[`membership:${m.id}`]?.trim()
-                              const res = await fetch(apiUrl('/product-image-generate'), {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  Authorization: `Bearer ${session.access_token}`,
-                                },
-                                body: JSON.stringify(
-                                  catalogImagePayload(artistId, 'membership', m.id, {
-                                    source_image_url: mCleanSource,
-                                    creative_prompt: hint || undefined,
-                                  })
-                                ),
-                              })
-                              const raw = await res.text()
-                              if (!res.ok) {
-                                setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
-                                return
-                              }
-                              await reloadMemberships(artistId)
-                              setCatalogImageNotice('Tier image cleaned.')
-                            } catch {
-                              setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
-                            } finally {
-                              setCatalogBusy(null)
-                            }
-                          }}
-                          className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
-                        >
-                          Clean &amp; standardize
-                        </button>
-                      )}
                     </div>
+                    <details className="group/aim rounded-lg border border-[var(--signal-silver-light)]/70 bg-[var(--signal-silver-light)]/10">
+                      <summary className="cursor-pointer select-none list-none px-2 py-2 text-xs font-medium text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+                        <span>AI: generate or clean image</span>
+                        <span className="text-[10px] shrink-0 opacity-80">
+                          <span className="group-open/aim:hidden">Show</span>
+                          <span className="hidden group-open/aim:inline">Hide</span>
+                        </span>
+                      </summary>
+                      <div className="space-y-2 border-t border-[var(--signal-silver-light)]/50 px-2 pb-2 pt-2">
+                        <textarea
+                          value={catalogPrompts[`membership:${m.id}`] ?? ''}
+                          onChange={(e) =>
+                            setCatalogPrompts((prev) => ({ ...prev, [`membership:${m.id}`]: e.target.value }))
+                          }
+                          placeholder="e.g. Gold accent, backstage pass vibe, velvet texture…"
+                          rows={2}
+                          disabled={catalogBusy !== null}
+                          aria-label="Optional notes for generated or cleaned tier image"
+                          className="w-full rounded-lg border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] px-2 py-1.5 text-xs text-[var(--signal-ink)] placeholder:text-[var(--signal-ink-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--signal-gold)]/40 disabled:opacity-50"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={catalogBusy !== null || !artistId}
+                            onClick={async () => {
+                              if (!artistId) return
+                              setCatalogImageNotice(null)
+                              setCatalogBusy({ kind: 'membership', id: m.id })
+                              try {
+                                const session = await getSession()
+                                if (!session) {
+                                  setCatalogImageNotice('Sign in again.')
+                                  return
+                                }
+                                const prompt = catalogPrompts[`membership:${m.id}`]?.trim()
+                                const res = await fetch(apiUrl('/product-image-generate'), {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify(
+                                    catalogImagePayload(artistId, 'membership', m.id, {
+                                      creative_prompt: prompt || undefined,
+                                    })
+                                  ),
+                                })
+                                const raw = await res.text()
+                                if (!res.ok) {
+                                  setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
+                                  return
+                                }
+                                await reloadMemberships(artistId)
+                                setCatalogImageNotice('Tier image generated.')
+                              } catch {
+                                setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                              } finally {
+                                setCatalogBusy(null)
+                              }
+                            }}
+                            className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--signal-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                          >
+                            {catalogBusy?.kind === 'membership' && catalogBusy.id === m.id ? '…' : 'Generate'}
+                          </button>
+                          {mCleanSource && (
+                            <button
+                              type="button"
+                              disabled={catalogBusy !== null || !artistId}
+                              onClick={async () => {
+                                if (!artistId || !mCleanSource) return
+                                setCatalogImageNotice(null)
+                                setCatalogBusy({ kind: 'membership', id: m.id })
+                                try {
+                                  const session = await getSession()
+                                  if (!session) {
+                                    setCatalogImageNotice('Sign in again.')
+                                    return
+                                  }
+                                  const hint = catalogPrompts[`membership:${m.id}`]?.trim()
+                                  const res = await fetch(apiUrl('/product-image-generate'), {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      Authorization: `Bearer ${session.access_token}`,
+                                    },
+                                    body: JSON.stringify(
+                                      catalogImagePayload(artistId, 'membership', m.id, {
+                                        source_image_url: mCleanSource,
+                                        creative_prompt: hint || undefined,
+                                      })
+                                    ),
+                                  })
+                                  const raw = await res.text()
+                                  if (!res.ok) {
+                                    setCatalogImageNotice(formatCatalogImageApiFailure(res, raw))
+                                    return
+                                  }
+                                  await reloadMemberships(artistId)
+                                  setCatalogImageNotice('Tier image cleaned.')
+                                } catch {
+                                  setCatalogImageNotice('Could not reach the image service. Try again in a moment.')
+                                } finally {
+                                  setCatalogBusy(null)
+                                }
+                              }}
+                              className="text-xs px-2.5 py-1.5 rounded-lg border border-[var(--signal-gold)]/50 text-[var(--signal-gold)] hover:bg-[var(--signal-gold)]/10 disabled:opacity-50"
+                            >
+                              Clean &amp; standardize
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </details>
                   </div>
                 </div>
                 )
@@ -1857,49 +1894,48 @@ export function Dashboard() {
             </span>
           </summary>
           <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 border-t border-[var(--signal-silver-light)]/70 bg-[var(--signal-white-pure)]">
-          <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mt-3">
-            <div>
-              <p className="text-xs text-[var(--signal-ink-muted)] max-w-xl" style={{ fontFamily: 'var(--font-body)' }}>
-                <strong className="text-[var(--signal-ink)]">Tracks</strong> are what fans buy from{' '}
-                <strong className="text-[var(--signal-ink)]">More → Track</strong> while you&apos;re live. Add merch and event tickets
-                for your shop too.
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={!artistId || backfillBusy}
-              onClick={() => {
-                if (!artistId) return
-                void backfillMissingCatalogImages(artistId)
-              }}
-              className="shrink-0 px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
-            >
-              {backfillBusy ? 'Backfilling…' : 'Backfill missing covers'}
-            </button>
+          <div className="mb-4 mt-3">
+            <p className="text-xs text-[var(--signal-ink-muted)] max-w-xl" style={{ fontFamily: 'var(--font-body)' }}>
+              <strong className="text-[var(--signal-ink)]">Tracks</strong> are what fans buy from{' '}
+              <strong className="text-[var(--signal-ink)]">More → Track</strong> while you&apos;re live. Add merch and event tickets
+              for your shop too.
+            </p>
           </div>
-          <p className="text-xs text-[var(--signal-ink-muted)] -mt-2 mb-4" style={{ fontFamily: 'var(--font-body)' }}>
-            AI-generated art for tracks, merch, tiers, and events (best-effort). Limited to reduce cost.
-          </p>
-          {import.meta.env.DEV && (
-            <p className="text-xs text-amber-900/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-3 py-2 mb-4" style={{ fontFamily: 'var(--font-body)' }}>
-              <strong className="font-medium">Local dev:</strong> image generation calls <code className="text-[10px] px-1 rounded bg-amber-500/15">/api/product-image-generate</code> on port{' '}
-              <strong>3000</strong>. Run <code className="text-[10px] px-1 rounded bg-amber-500/15">npm run dev:all</code> or{' '}
-              <code className="text-[10px] px-1 rounded bg-amber-500/15">npm run dev:vercel</code> in a second terminal, and complete{' '}
-              <code className="text-[10px] px-1 rounded bg-amber-500/15">npm run vercel:link</code> the first time. Ensure{' '}
-              <code className="text-[10px] px-1 rounded bg-amber-500/15">OPENAI_API_KEY</code> or <code className="text-[10px] px-1 rounded bg-amber-500/15">GEMINI_API_KEY</code> is in{' '}
-              <code className="text-[10px] px-1 rounded bg-amber-500/15">.env</code>.
-            </p>
-          )}
-          {backfillProgress && (
-            <p className="text-xs text-[var(--signal-ink-muted)] mb-3" style={{ fontFamily: 'var(--font-body)' }}>
-              {backfillProgress.done}/{backfillProgress.total} done
-            </p>
-          )}
-          {backfillNotice && (
-            <p className="text-sm text-[var(--signal-ink-muted)] mb-3" style={{ fontFamily: 'var(--font-body)' }}>
-              {backfillNotice}
-            </p>
-          )}
+          <details className="group/batchai mb-4 rounded-lg border border-[var(--signal-silver-light)]/70 bg-[var(--signal-silver-light)]/10">
+            <summary className="cursor-pointer select-none list-none px-3 py-2.5 text-sm font-medium text-[var(--signal-ink-muted)] hover:text-[var(--signal-ink)] [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+              <span>Batch AI: backfill missing covers</span>
+              <span className="text-[11px] shrink-0 opacity-80">
+                <span className="group-open/batchai:hidden">Show</span>
+                <span className="hidden group-open/batchai:inline">Hide</span>
+              </span>
+            </summary>
+            <div className="space-y-3 border-t border-[var(--signal-silver-light)]/50 px-3 pb-3 pt-3">
+              <p className="text-xs text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>
+                AI-generated art for tracks, merch, tiers, and events (best-effort). Limited to reduce cost.
+              </p>
+              <button
+                type="button"
+                disabled={!artistId || backfillBusy}
+                onClick={() => {
+                  if (!artistId) return
+                  void backfillMissingCatalogImages(artistId)
+                }}
+                className="px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {backfillBusy ? 'Backfilling…' : 'Backfill missing covers'}
+              </button>
+              {backfillProgress && (
+                <p className="text-xs text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>
+                  {backfillProgress.done}/{backfillProgress.total} done
+                </p>
+              )}
+              {backfillNotice && (
+                <p className="text-sm text-[var(--signal-ink-muted)]" style={{ fontFamily: 'var(--font-body)' }}>
+                  {backfillNotice}
+                </p>
+              )}
+            </div>
+          </details>
           <input
             ref={catalogFileRef}
             type="file"

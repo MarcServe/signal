@@ -32,7 +32,9 @@ export function DiscoveryCard({ item, layout = 'default' }: DiscoveryCardProps) 
       type="button"
       onClick={handleTap}
       className={`text-left rounded-[var(--radius-card)] overflow-hidden bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)] focus:ring-offset-2 ${
-        fill ? 'flex h-full min-h-0 w-full flex-col' : 'w-full'
+        fill
+          ? 'flex h-full w-full min-h-[calc(100svh-3.5rem)] flex-col'
+          : 'w-full'
       }`}
       style={{ transition: 'transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out)' }}
       onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.98)')}
@@ -42,7 +44,7 @@ export function DiscoveryCard({ item, layout = 'default' }: DiscoveryCardProps) 
       <div
         className={`relative bg-[var(--signal-silver-light)] ${
           fill
-            ? 'w-full flex-1 min-h-[max(15rem,min(82dvh,calc(100dvh-4.5rem)))]'
+            ? 'relative min-h-0 w-full flex-1'
             : `${aspectClass} min-h-[200px]`
         }`}
       >
@@ -59,16 +61,28 @@ export function DiscoveryCard({ item, layout = 'default' }: DiscoveryCardProps) 
           </div>
         )}
         {item.is_live && (
-          <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-red-600 text-white text-xs font-medium uppercase tracking-wide">
+          <span
+            className={`absolute rounded bg-red-600 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-white ${
+              fill ? 'right-[var(--gutter)] top-3' : 'right-2 top-2'
+            }`}
+          >
             Live
           </span>
         )}
         {item.item_type === 'track' && (
-          <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-[var(--signal-gold)]/90 text-white text-xs font-medium uppercase tracking-wide">
+          <span
+            className={`absolute rounded bg-[var(--signal-gold)]/90 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-white ${
+              fill ? 'left-[var(--gutter)] top-3' : 'left-2 top-2'
+            }`}
+          >
             Track
           </span>
         )}
-        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent">
+        <div
+          className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent ${
+            fill ? 'px-[var(--gutter)] pb-4 pt-10' : 'p-3'
+          }`}
+        >
           <p className="text-white font-medium truncate" style={{ fontFamily: 'var(--font-body)' }}>
             {item.title}
           </p>
