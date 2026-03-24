@@ -49,6 +49,21 @@ function buildDemoStreams(): Record<string, DemoStreamData> {
       avatar_image_url: profile?.avatar_url ?? item.image_url ?? null,
     }
   }
+
+  // DJ KRUST: discover card is `/artist/demo-artist-1`, but profile + `/live/demo-1` still use this mock stream.
+  const krust = DEMO_ARTIST_PROFILES['demo-artist-1']
+  const ytKrust = youtubePlaybackUrl('demo-1')
+  byStreamId['demo-1'] = {
+    id: 'demo-1',
+    title: 'DJ KRUST',
+    playback_url: ytKrust,
+    artist_id: 'demo-artist-1',
+    is_live: true,
+    display_name: krust?.display_name ?? 'DJ KRUST',
+    avatar_url: krust?.avatar_url ?? '/demo/card1.png',
+    avatar_image_url: krust?.avatar_url ?? '/demo/card1.png',
+  }
+
   return byStreamId
 }
 
@@ -58,11 +73,10 @@ export function getDemoStream(streamId: string): DemoStreamData | null {
   return DEMO_STREAMS[streamId] ?? null
 }
 
-/** Ordered demo stream IDs for prev/next cycling in LiveView. */
-export const DEMO_STREAM_IDS: string[] = DEMO_FEED_ITEMS.filter(
-  (i) => i.item_type === 'stream' && i.id.startsWith('demo-') && i.is_live
-)
-  .map((i) => i.id)
+/** Ordered demo stream IDs for prev/next cycling in LiveView (includes demo-1 even though it is not a feed stream row). */
+export const DEMO_STREAM_IDS: string[] = Object.values(DEMO_STREAMS)
+  .filter((s) => s.is_live && s.playback_url)
+  .map((s) => s.id)
   .sort((a, b) => {
     const na = parseInt(a.replace('demo-', ''), 10)
     const nb = parseInt(b.replace('demo-', ''), 10)

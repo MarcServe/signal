@@ -114,7 +114,6 @@ export function ArtistProfile() {
   const [purchaseProduct, setPurchaseProduct] = useState<Product | null>(null)
   const [joinMembership, setJoinMembership] = useState<Membership | null>(null)
   const [mockToast, setMockToast] = useState<string | null>(null)
-  const [liveStream, setLiveStream] = useState<{ id: string; title: string | null } | null>(null)
 
   const isDemo = artistId?.startsWith('demo-artist-')
 
@@ -137,10 +136,6 @@ export function ArtistProfile() {
         setMemberships(
           profile.memberships as { id: string; title: string; price_cents: number; image_url: string | null }[]
         )
-        const liveItem = DEMO_FEED_ITEMS.find(
-          (i) => i.artist_id === artistId && i.item_type === 'stream' && i.is_live
-        )
-        setLiveStream(liveItem ? { id: liveItem.id, title: liveItem.title } : null)
       } else if (demo) {
         setArtist({
           id: artistId,
@@ -152,13 +147,8 @@ export function ArtistProfile() {
         setEvents([])
         setProducts([])
         setMemberships([])
-        const liveItem = DEMO_FEED_ITEMS.find(
-          (i) => i.artist_id === artistId && i.item_type === 'stream' && i.is_live
-        )
-        setLiveStream(liveItem ? { id: liveItem.id, title: liveItem.title } : null)
       } else {
         setNotFound(true)
-        setLiveStream(null)
       }
       setLoading(false)
       return
@@ -166,7 +156,6 @@ export function ArtistProfile() {
 
     setLoading(true)
     setNotFound(false)
-    setLiveStream(null)
     supabase
       .from('artists')
       .select('id, display_name, handle, avatar_url, bio')
@@ -202,23 +191,6 @@ export function ArtistProfile() {
       .select('id, title, price_cents, image_url')
       .eq('artist_id', artistId)
       .then(({ data }) => setMemberships((data ?? []) as Membership[]))
-
-    const loadLive = () => {
-      void supabase
-        .from('streams')
-        .select('id, title')
-        .eq('artist_id', artistId)
-        .eq('is_live', true)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-        .then(({ data }) => {
-          setLiveStream(data ? { id: data.id, title: data.title } : null)
-        })
-    }
-    loadLive()
-    const livePoll = window.setInterval(loadLive, 12000)
-    return () => window.clearInterval(livePoll)
   }, [artistId, isDemo])
 
   // Open product or membership modal from URL (?product=id or ?membership=id)
@@ -297,32 +269,6 @@ export function ArtistProfile() {
           <span aria-hidden>←</span> Feed
         </Link>
       </div>
-
-      {liveStream && (
-        <div className="relative z-20 pt-14 px-4 max-w-4xl mx-auto">
-          <Link
-            to={artist.id === 'demo-artist-1' ? '/dashboard' : `/live/${liveStream.id}`}
-            className={`flex items-center justify-center gap-2 w-full rounded-xl text-white text-sm font-semibold py-3 px-4 shadow-lg transition-colors ${
-              artist.id === 'demo-artist-1'
-                ? 'bg-[var(--signal-ink)] hover:opacity-90'
-                : 'bg-red-600 hover:bg-red-700'
-            }`}
-            style={{ fontFamily: 'var(--font-display)' }}
-          >
-            {artist.id === 'demo-artist-1' ? (
-              <span className="text-center">Open studio — {artist.display_name}</span>
-            ) : (
-              <>
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
-                </span>
-                Watch live{liveStream.title ? ` — ${liveStream.title}` : ''}
-              </>
-            )}
-          </Link>
-        </div>
-      )}
 
       {/* Mock toast */}
       {mockToast && (
@@ -410,13 +356,7 @@ export function ArtistProfile() {
                   event={e}
                   nowMs={scheduleNow}
                   artistAvatarUrl={artist.avatar_url}
-                  to={
-                    e.id.startsWith('demo-')
-                      ? artist.id === 'demo-artist-1'
-                        ? '/dashboard'
-                        : `/live/demo-1`
-                      : `/live/${e.id}`
-                  }
+                  to={e.id.startsWith('demo-') ? `/live/demo-1` : `/live/${e.id}`}
                 />
               ))}
             </div>

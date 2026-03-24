@@ -6,19 +6,18 @@ const bump = (ms: number) => new Date(Date.now() + ms).toISOString()
 
 /**
  * Mixed demo destinations: live (YouTube samples in `demoStreams.ts`) vs artist profile.
- * DJ KRUST (`demo-1`) uses `link_path: '/dashboard'` so the tile opens the signed-in user’s Studio (demo pitch),
- * not the YouTube stand-in live player. Other demo streams still use `/live/demo-*`.
+ * DJ KRUST is an **artist** card like MARCUS REID — opens `/artist/demo-artist-1`. Live viewing stays at `/live/demo-1`
+ * (registered in `demoStreams.ts` even though the feed tile is not a stream row).
  */
 export const DEMO_FEED_ITEMS: FeedItem[] = [
   {
-    item_type: 'stream',
+    item_type: 'artist',
     id: 'demo-1',
     artist_id: 'demo-artist-1',
     title: 'DJ KRUST',
     image_url: '/demo/card1.png',
     is_live: false,
-    cta: 'Open studio',
-    link_path: '/dashboard',
+    cta: 'View profile',
     sort_at: bump(0),
   },
   {
