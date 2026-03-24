@@ -23,9 +23,10 @@ function MainLayout() {
   return (
     <>
       <Sidebar />
-      <div className="min-h-screen flex flex-col pl-14">
+      <div className="flex min-h-screen flex-col pl-14">
         <TopBar />
-        <main className="flex-1">
+        {/* min-h-0 so flex children (e.g. mobile discover) can fill below TopBar without forcing page scroll */}
+        <main className="flex min-h-0 flex-1 flex-col">
           <Outlet />
         </main>
       </div>

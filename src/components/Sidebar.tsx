@@ -35,7 +35,7 @@ export function Sidebar() {
   const createMenuActive = quickCreateOpen
 
   return (
-    <aside className="fixed left-0 top-0 z-40 flex h-full min-h-screen w-14 flex-col items-center border-r border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] py-5">
+    <aside className="fixed bottom-0 left-0 top-0 z-40 flex w-14 flex-col items-center border-r border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] py-5">
       <Link to="/" className="mb-8 flex shrink-0 items-center justify-center" aria-label="Signal home">
         <img src="/signal-logo.png" alt="" className="h-7 w-auto object-contain opacity-90" />
       </Link>

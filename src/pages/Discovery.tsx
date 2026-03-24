@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { MasonryGrid, masonryGridContainerStyle } from '../design-system/MasonryGrid'
+import { MasonryGrid } from '../design-system/MasonryGrid'
 import { DiscoveryCard } from '../components/DiscoveryCard'
 import { DiscoveryMobileCarousel } from '../components/DiscoveryMobileCarousel'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
@@ -156,7 +156,7 @@ export function Discovery() {
   const feedBootstrapping = authLoading || (user && !profile) || (loading && items.length === 0)
 
   return (
-    <div style={masonryGridContainerStyle} className="min-h-screen">
+    <div className="box-border flex max-w-full min-h-0 flex-1 flex-col p-[var(--gutter)] max-md:p-0 md:min-h-screen">
       {feedBootstrapping && (
         <div className="sticky top-0 z-20 flex min-h-[40vh] items-center justify-center px-4 text-sm text-[var(--signal-ink-muted)]">
           Loading feed…

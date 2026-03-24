@@ -4,6 +4,8 @@ import type { FeedItem, FeedItemType } from '../types/feed'
 
 export interface DiscoveryCardProps {
   item: FeedItem
+  /** Mobile carousel: stretch card to slide height so the image can fill the viewport. */
+  layout?: 'default' | 'mobileFill'
 }
 
 /** Tall portrait “card” ratio everywhere for image-first feed (not square tiles). */
@@ -15,10 +17,11 @@ const aspectByType: Record<FeedItemType, string> = {
   track: 'aspect-[3/4]',
 }
 
-export function DiscoveryCard({ item }: DiscoveryCardProps) {
+export function DiscoveryCard({ item, layout = 'default' }: DiscoveryCardProps) {
   const navigate = useNavigate()
   const isDemoCard = item.id.startsWith('demo-')
   const aspectClass = isDemoCard ? 'aspect-[3/4]' : (aspectByType[item.item_type] || 'aspect-[3/4]')
+  const fill = layout === 'mobileFill'
 
   const handleTap = () => {
     navigate(getFeedItemDetailPath(item))
@@ -28,13 +31,21 @@ export function DiscoveryCard({ item }: DiscoveryCardProps) {
     <button
       type="button"
       onClick={handleTap}
-      className="w-full text-left rounded-[var(--radius-card)] overflow-hidden bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)] focus:ring-offset-2"
+      className={`text-left rounded-[var(--radius-card)] overflow-hidden bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] focus:outline-none focus:ring-2 focus:ring-[var(--signal-gold)] focus:ring-offset-2 ${
+        fill ? 'flex h-full min-h-0 w-full flex-col' : 'w-full'
+      }`}
       style={{ transition: 'transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out)' }}
       onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.98)')}
       onMouseUp={(e) => (e.currentTarget.style.transform = '')}
       onMouseLeave={(e) => (e.currentTarget.style.transform = '')}
     >
-      <div className={`relative ${aspectClass} min-h-[200px] bg-[var(--signal-silver-light)]`}>
+      <div
+        className={`relative bg-[var(--signal-silver-light)] ${
+          fill
+            ? 'min-h-0 flex-1 w-full'
+            : `${aspectClass} min-h-[200px]`
+        }`}
+      >
         {item.image_url ? (
           <img
             src={item.image_url}

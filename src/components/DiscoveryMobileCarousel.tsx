@@ -156,10 +156,10 @@ export function DiscoveryMobileCarousel({ items }: { items: FeedItem[] }) {
   if (n === 0) return null
 
   return (
-    <div className="md:hidden -mx-[var(--gutter)]">
+    <div className="flex min-h-0 flex-1 flex-col md:hidden -mx-[var(--gutter)]">
       <div
         ref={scrollerRef}
-        className="flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory px-[var(--gutter)] pb-2 no-scrollbar [-webkit-overflow-scrolling:touch]"
+        className="flex min-h-0 flex-1 gap-4 overflow-x-auto overflow-y-hidden scroll-smooth snap-x snap-mandatory px-[var(--gutter)] pb-1 no-scrollbar [-webkit-overflow-scrolling:touch]"
         role="region"
         aria-label="Discover — swipe sideways"
         onPointerDown={bumpUserPause}
@@ -167,14 +167,14 @@ export function DiscoveryMobileCarousel({ items }: { items: FeedItem[] }) {
         {loopItems.map((item, i) => (
           <div
             key={loopKeys[i]}
-            className="w-[min(88vw,400px)] shrink-0 snap-center snap-always"
+            className="flex h-full min-h-0 w-[min(92vw,calc(100vw-3.75rem))] max-w-[420px] shrink-0 snap-center snap-always"
           >
-            <DiscoveryCard item={item} />
+            <DiscoveryCard item={item} layout="mobileFill" />
           </div>
         ))}
       </div>
       {n > 1 && (
-        <p className="text-center text-[11px] text-[var(--signal-ink-muted)] pb-4 pt-1 px-[var(--gutter)]">
+        <p className="shrink-0 px-[var(--gutter)] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 text-center text-[11px] text-[var(--signal-ink-muted)]">
           Swipe sideways for more · auto-advances when idle
         </p>
       )}
