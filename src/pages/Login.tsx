@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { resolvePostAuthPath } from '../lib/safeInternalPath'
 import { useAuth } from '../contexts/AuthContext'
 
 export function Login() {
@@ -10,13 +11,15 @@ export function Login() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
 
   useEffect(() => {
     if (authLoading) return
     if (user) {
-      navigate('/dashboard', { replace: true })
+      navigate(resolvePostAuthPath(searchParams.get('redirect'), location.state), { replace: true })
     }
-  }, [authLoading, user, navigate])
+  }, [authLoading, user, navigate, searchParams, location.state])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,14 +36,15 @@ export function Login() {
       return
     }
     setMessage({ type: 'success', text: 'Signed in.' })
-    navigate('/', { replace: true })
+    navigate(resolvePostAuthPath(searchParams.get('redirect'), location.state), { replace: true })
   }
 
   const handleOAuth = async (provider: 'google' | 'apple') => {
     setMessage(null)
+    const next = resolvePostAuthPath(searchParams.get('redirect'), location.state)
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/` },
+      options: { redirectTo: `${window.location.origin}${next}` },
     })
     if (error) setMessage({ type: 'error', text: error.message })
   }
@@ -111,7 +115,13 @@ export function Login() {
           </button>
         </form>
         <p className="mt-4 text-center text-sm text-[var(--signal-ink-muted)]">
-          Don’t have an account? <Link to="/signup" className="text-[var(--signal-gold)]">Sign up</Link>
+          Don’t have an account?{' '}
+          <Link
+            to={searchParams.toString() ? `/signup?${searchParams.toString()}` : '/signup'}
+            className="text-[var(--signal-gold)]"
+          >
+            Sign up
+          </Link>
         </p>
       </div>
     </div>

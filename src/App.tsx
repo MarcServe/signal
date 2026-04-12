@@ -19,6 +19,7 @@ import { Messages } from './pages/Messages'
 import { Settings } from './pages/Settings'
 import { SettingsAccount } from './pages/SettingsAccount'
 import { SettingsPrivacy } from './pages/SettingsPrivacy'
+import { ProtectedRoute } from './components/ProtectedRoute'
 
 function MainLayout() {
   return (
@@ -64,14 +65,16 @@ function App() {
             <Route path="/artist/:artistId" element={<ArtistProfile />} />
           </Route>
           <Route element={<MainLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="/avatar/create" element={<AvatarCreate />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/messages" element={<Messages />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/settings/account" element={<SettingsAccount />} />
-            <Route path="/settings/privacy" element={<SettingsPrivacy />} />
+            <Route element={<ProtectedRoute />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="/avatar/create" element={<AvatarCreate />} />
+              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/account" element={<SettingsAccount />} />
+              <Route path="/settings/privacy" element={<SettingsPrivacy />} />
+            </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

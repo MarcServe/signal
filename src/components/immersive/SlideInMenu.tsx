@@ -41,6 +41,10 @@ export function SlideInMenu({ open, onClose }: { open: boolean; onClose: () => v
 
   const activeClass = (active: boolean) => (active ? 'bg-white/15 text-white' : '')
 
+  const authRedirect = encodeURIComponent(`${location.pathname}${location.search}`)
+  const loginTo = `/login?redirect=${authRedirect}`
+  const signupTo = `/signup?redirect=${authRedirect}`
+
   return (
     <>
       <div
@@ -78,30 +82,50 @@ export function SlideInMenu({ open, onClose }: { open: boolean; onClose: () => v
           <Link to="/" className={`${linkClass} ${activeClass(homeActive)}`} onClick={onClose}>
             Home
           </Link>
-          <Link to={studioTo} className={`${linkClass} ${activeClass(studioActive)}`} onClick={onClose}>
-            {studioLabel}
-          </Link>
-          {profile?.role === 'artist' ? (
+          {user ? (
             <>
-              <button
-                type="button"
-                className={`${linkClass} w-full text-left ${activeClass(quickCreateOpen)}`}
-                aria-haspopup="dialog"
-                aria-expanded={quickCreateOpen}
-                onClick={() => setQuickCreateOpen(true)}
-              >
-                Quick add
-              </button>
-              <ArtistQuickCreateModal open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} />
+              <Link to={studioTo} className={`${linkClass} ${activeClass(studioActive)}`} onClick={onClose}>
+                {studioLabel}
+              </Link>
+              {profile?.role === 'artist' ? (
+                <>
+                  <button
+                    type="button"
+                    className={`${linkClass} w-full text-left ${activeClass(quickCreateOpen)}`}
+                    aria-haspopup="dialog"
+                    aria-expanded={quickCreateOpen}
+                    onClick={() => {
+                      setQuickCreateOpen(true)
+                      onClose()
+                    }}
+                  >
+                    Quick add
+                  </button>
+                  <ArtistQuickCreateModal open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} />
+                </>
+              ) : (
+                <Link
+                  to="/become-artist"
+                  className={`${linkClass} ${activeClass(becomeArtistActive)}`}
+                  onClick={onClose}
+                >
+                  Become an artist
+                </Link>
+              )}
+              <Link to="/settings" className={`${linkClass} ${activeClass(settingsActive)}`} onClick={onClose}>
+                Settings
+              </Link>
             </>
-          ) : user ? (
-            <Link to="/become-artist" className={`${linkClass} ${activeClass(becomeArtistActive)}`} onClick={onClose}>
-              Become an artist
-            </Link>
-          ) : null}
-          <Link to="/settings" className={`${linkClass} ${activeClass(settingsActive)}`} onClick={onClose}>
-            Settings
-          </Link>
+          ) : (
+            <>
+              <Link to={loginTo} className={linkClass} onClick={onClose}>
+                Log in
+              </Link>
+              <Link to={signupTo} className={linkClass} onClick={onClose}>
+                Sign up
+              </Link>
+            </>
+          )}
         </nav>
 
         <div className="border-t border-white/10 p-4 text-center text-[10px] uppercase tracking-widest text-white/35">

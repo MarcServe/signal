@@ -4,7 +4,7 @@ import { ArtistQuickCreateModal } from './ArtistQuickCreateModal'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
- * Minimal rail: Home · Studio/Dashboard · Quick add (artists) or Become an artist (signed-in fans) · Settings.
+ * Minimal rail: Home (guests) · Studio/Dashboard · Quick add (artists) or Become an artist (fans) · Settings (signed-in).
  * Messages & notifications live under Settings to keep the chrome quiet.
  */
 export function Sidebar() {
@@ -44,37 +44,41 @@ export function Sidebar() {
         <Link to="/" className={navClass(homeActive)} aria-label="Home" title="Home">
           <HomeIcon className="h-5 w-5" strokeWidth={1.5} />
         </Link>
-        <Link to={studioTo} className={navClass(studioActive)} aria-label={studioLabel} title={studioLabel}>
-          <StudioIcon className="h-5 w-5" strokeWidth={1.5} />
-        </Link>
-        {profile?.role === 'artist' ? (
+        {user ? (
           <>
-            <button
-              type="button"
-              className={navClass(createMenuActive)}
-              aria-label="Quick add product, event, or membership"
-              title="Quick add"
-              aria-haspopup="dialog"
-              aria-expanded={quickCreateOpen}
-              onClick={() => setQuickCreateOpen(true)}
-            >
-              <PlusIcon className="h-5 w-5" strokeWidth={1.5} />
-            </button>
-            <ArtistQuickCreateModal open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} />
+            <Link to={studioTo} className={navClass(studioActive)} aria-label={studioLabel} title={studioLabel}>
+              <StudioIcon className="h-5 w-5" strokeWidth={1.5} />
+            </Link>
+            {profile?.role === 'artist' ? (
+              <>
+                <button
+                  type="button"
+                  className={navClass(createMenuActive)}
+                  aria-label="Quick add product, event, or membership"
+                  title="Quick add"
+                  aria-haspopup="dialog"
+                  aria-expanded={quickCreateOpen}
+                  onClick={() => setQuickCreateOpen(true)}
+                >
+                  <PlusIcon className="h-5 w-5" strokeWidth={1.5} />
+                </button>
+                <ArtistQuickCreateModal open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} />
+              </>
+            ) : (
+              <Link
+                to="/become-artist"
+                className={navClass(becomeArtistActive)}
+                aria-label="Become an artist"
+                title="Become an artist"
+              >
+                <PlusIcon className="h-5 w-5" strokeWidth={1.5} />
+              </Link>
+            )}
+            <Link to="/settings" className={navClass(settingsActive)} aria-label="Settings" title="Settings">
+              <SettingsIcon className="h-5 w-5" strokeWidth={1.5} />
+            </Link>
           </>
-        ) : user ? (
-          <Link
-            to="/become-artist"
-            className={navClass(becomeArtistActive)}
-            aria-label="Become an artist"
-            title="Become an artist"
-          >
-            <PlusIcon className="h-5 w-5" strokeWidth={1.5} />
-          </Link>
         ) : null}
-        <Link to="/settings" className={navClass(settingsActive)} aria-label="Settings" title="Settings">
-          <SettingsIcon className="h-5 w-5" strokeWidth={1.5} />
-        </Link>
       </nav>
     </aside>
   )

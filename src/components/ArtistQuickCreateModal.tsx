@@ -385,7 +385,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6"
       role="presentation"
     >
       <button
@@ -398,7 +398,7 @@ export function ArtistQuickCreateModal({ open, onClose }: { open: boolean; onClo
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-[101] w-full max-w-md max-h-[min(92vh,720px)] overflow-hidden flex flex-col rounded-2xl border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] shadow-xl"
+        className="relative z-[111] w-full max-w-md max-h-[min(92vh,720px)] overflow-hidden flex flex-col rounded-2xl border border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)] shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3 border-b border-[var(--signal-silver-light)]/80">

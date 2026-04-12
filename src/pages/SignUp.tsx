@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { resolvePostAuthPath } from '../lib/safeInternalPath'
 import { useAuth } from '../contexts/AuthContext'
 
 export type SignUpRole = 'artist' | 'fan'
@@ -14,13 +15,14 @@ export function SignUp() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   useEffect(() => {
     if (authLoading) return
     if (user) {
-      navigate('/dashboard', { replace: true })
+      navigate(resolvePostAuthPath(searchParams.get('redirect'), null), { replace: true })
     }
-  }, [authLoading, user, navigate])
+  }, [authLoading, user, navigate, searchParams])
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,14 +54,18 @@ export function SignUp() {
           ? 'Account created. Complete your artist setup below.'
           : 'Account created. Welcome — opening your home.',
     })
-    navigate(role === 'artist' ? '/onboarding' : '/dashboard', { replace: true })
+    navigate(
+      role === 'artist' ? '/onboarding' : resolvePostAuthPath(searchParams.get('redirect'), null),
+      { replace: true }
+    )
   }
 
   const handleOAuth = async (provider: 'google' | 'apple') => {
     setMessage(null)
+    const next = resolvePostAuthPath(searchParams.get('redirect'), null)
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/` },
+      options: { redirectTo: `${window.location.origin}${next}` },
     })
     if (error) setMessage({ type: 'error', text: error.message })
   }
@@ -156,7 +162,13 @@ export function SignUp() {
           </button>
         </form>
         <p className="mt-4 text-center text-sm text-[var(--signal-ink-muted)]">
-          Already have an account? <Link to="/login" className="text-[var(--signal-gold)]">Sign in</Link>
+          Already have an account?{' '}
+          <Link
+            to={searchParams.toString() ? `/login?${searchParams.toString()}` : '/login'}
+            className="text-[var(--signal-gold)]"
+          >
+            Sign in
+          </Link>
         </p>
       </div>
     </div>
