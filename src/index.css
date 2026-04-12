@@ -21,6 +21,8 @@
   --space-2xl: 3rem;
   --space-3xl: 4rem;
   --gutter: 1rem;
+  /* ImmersiveChrome fixed top row: pt + h-11 buttons + p-3 bottom — pad masonry so cards sit below controls */
+  --immersive-chrome-stack-height: calc(max(0.75rem, env(safe-area-inset-top, 0px)) + 2.75rem + 0.75rem);
 
   /* Typography */
   --font-display: "Cormorant Garamond", "Georgia", serif;

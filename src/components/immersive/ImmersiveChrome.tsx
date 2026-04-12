@@ -23,7 +23,8 @@ function SearchIcon({ className }: { className?: string }) {
 }
 
 /**
- * Minimal floating chrome: menu + search. No persistent top bar (luxury / magazine spec).
+ * Minimal floating chrome: menu top-left; sign-in/out + search top-right.
+ * Discovery reserves `--immersive-chrome-stack-height` top padding on md+ so cards don’t sit under controls.
  */
 export function ImmersiveChrome() {
   const nav = useImmersiveNav()

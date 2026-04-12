@@ -143,14 +143,17 @@ export function Discovery() {
 
   useEffect(() => {
     if (!hasMore || loading) return
-    const el = document.scrollingElement
+    const el =
+      (document.querySelector('[data-immersive-scrollport]') as HTMLElement | null) ??
+      (document.scrollingElement as HTMLElement | null)
+    if (!el) return
     const onScroll = () => {
-      if (!el || loadingRef.current) return
+      if (loadingRef.current) return
       const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 400
       if (nearBottom) loadPage(offset)
     }
-    el?.addEventListener('scroll', onScroll, { passive: true })
-    return () => el?.removeEventListener('scroll', onScroll)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
   }, [offset, hasMore, loadPage, loading])
 
   const orderedFeedItems = useMemo(
@@ -166,7 +169,7 @@ export function Discovery() {
   const feedBootstrapping = authLoading || (user && !profile) || (loading && items.length === 0)
 
   return (
-    <div className="box-border flex h-full min-h-0 w-full max-w-full flex-1 flex-col overflow-hidden bg-black p-[var(--gutter)] max-md:p-0 md:min-h-screen md:overflow-visible">
+    <div className="box-border flex max-md:h-full min-h-0 w-full max-w-full flex-1 flex-col overflow-hidden bg-black p-[var(--gutter)] max-md:p-0 md:h-auto md:min-h-0 md:overflow-visible">
       {feedBootstrapping && (
         <div className="sticky top-0 z-20 flex min-h-[40vh] items-center justify-center px-4 text-sm text-white/50">
           Loading feed…
@@ -191,7 +194,7 @@ export function Discovery() {
         </div>
       )}
       {!feedBootstrapping && (
-        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden md:min-h-0 md:overflow-visible">
+        <div className="flex max-md:h-full min-h-0 flex-1 flex-col overflow-hidden max-md:min-h-0 md:h-auto md:overflow-visible">
           {/* Mobile: full-screen vertical snap stack — parent clips to viewport so sticky uses this scrollport */}
           <DiscoveryMobileStack
             items={filteredItems}
@@ -201,7 +204,7 @@ export function Discovery() {
             }}
           />
           {/* Tablet/desktop: masonry */}
-          <div className="hidden min-h-0 flex-1 md:block md:bg-black md:px-4 md:pb-10 md:pt-4">
+          <div className="hidden min-h-0 flex-1 md:block md:bg-black md:px-4 md:pb-10 md:pt-[var(--immersive-chrome-stack-height)]">
             <MasonryGrid
               items={filteredItems}
               renderItem={(item) => <DiscoveryCard item={item} variant="immersive" />}

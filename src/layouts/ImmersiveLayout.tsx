@@ -23,7 +23,10 @@ export function ImmersiveLayout() {
       <div className="immersive-root flex h-full min-h-0 max-h-[100dvh] flex-col overflow-hidden bg-black text-white">
         <ImmersiveChrome />
         <SlideInMenu open={menuOpen} onClose={closeMenu} />
-        <main className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        <main
+          data-immersive-scrollport
+          className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain"
+        >
           <Outlet />
         </main>
       </div>
