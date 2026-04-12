@@ -1,28 +1,18 @@
-import { useEffect, useMemo, useState, type SyntheticEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
 import { DEMO_ARTIST_PROFILES } from '../data/demoArtists'
-import { catalogCardImageUrl } from '../lib/catalogImage'
-import { formatGbp } from '../lib/currency'
 import { CheckoutDrawer } from '../components/CheckoutDrawer'
-import { stripCitationMarkers } from '../lib/cleanBioText'
 import {
-  formatCountdown,
-  formatTimeRemainingLive,
-  getEventPhase,
   sortEventsForLiveSchedule,
   type ScheduleEventRow,
 } from '../lib/eventSchedule'
-
-function fallbackToArtistPortrait(e: SyntheticEvent<HTMLImageElement>, portrait: string | null) {
-  const el = e.currentTarget
-  if (el.dataset.fallbackPortrait === '1') return
-  const p = portrait?.trim()
-  if (!p) return
-  el.dataset.fallbackPortrait = '1'
-  el.src = p
-}
+import { AboutSheet } from '../components/artist/AboutSheet'
+import { ArtistEventRailCard } from '../components/artist/ArtistEventRailCard'
+import { ArtistHorizontalRail } from '../components/artist/ArtistHorizontalRail'
+import { ArtistMembershipTile, ArtistProductTile } from '../components/artist/ArtistMerchTile'
+import { ScheduleTimeSheet } from '../components/artist/ScheduleTimeSheet'
 
 type ArtistState = {
   id: string
@@ -34,72 +24,6 @@ type ArtistState = {
 
 type Product = { id: string; title: string; image_url: string | null; type: string; price_cents?: number }
 type Membership = { id: string; title: string; price_cents: number; image_url: string | null }
-
-function LiveScheduleEventCard({
-  event: e,
-  nowMs,
-  artistAvatarUrl,
-  to,
-}: {
-  event: ScheduleEventRow
-  nowMs: number
-  artistAvatarUrl: string | null
-  to: string
-}) {
-  const phase = getEventPhase(e.starts_at, e.ends_at, nowMs)
-  const eventCardImg = catalogCardImageUrl(e.image_url, artistAvatarUrl)
-  const startMs = Date.parse(e.starts_at)
-  const whenLine = new Date(e.starts_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-
-  const badge =
-    phase === 'live' ? (
-      <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-red-600 text-white text-xs font-semibold uppercase tracking-wide shadow-sm">
-        Live
-      </span>
-    ) : phase === 'upcoming' ? (
-      <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-amber-500 text-white text-xs font-semibold uppercase tracking-wide shadow-sm">
-        Not started yet
-      </span>
-    ) : (
-      <span className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-black/55 text-white text-xs font-semibold uppercase tracking-wide shadow-sm">
-        Ended
-      </span>
-    )
-
-  let countdownLine: string | null = null
-  if (phase === 'upcoming' && !Number.isNaN(startMs)) {
-    countdownLine = `Starts in ${formatCountdown(startMs, nowMs)}`
-  } else if (phase === 'live') {
-    countdownLine = `Ends in ${formatTimeRemainingLive(e.starts_at, e.ends_at, nowMs)}`
-  }
-
-  return (
-    <Link to={to} className="block rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-white hover:border-[var(--signal-gold)]/40 transition-colors">
-      <div className="aspect-video w-full overflow-hidden bg-[var(--signal-silver-light)] relative">
-        {badge}
-        {eventCardImg ? (
-          <img
-            src={eventCardImg}
-            alt=""
-            className="h-full w-full object-cover object-center"
-            onError={(ev) => fallbackToArtistPortrait(ev, artistAvatarUrl)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center p-4">
-            <span className="text-sm font-medium text-[var(--signal-ink)] text-center">{e.title}</span>
-          </div>
-        )}
-      </div>
-      <div className="p-3 space-y-1">
-        <p className="font-medium text-[var(--signal-ink)]">{e.title}</p>
-        <p className="text-sm text-[var(--signal-ink-muted)]">{whenLine}</p>
-        {countdownLine && (
-          <p className="text-sm font-medium text-[var(--signal-gold)] tabular-nums tracking-tight">{countdownLine}</p>
-        )}
-      </div>
-    </Link>
-  )
-}
 
 export function ArtistProfile() {
   const { artistId } = useParams<{ artistId: string }>()
@@ -114,6 +38,8 @@ export function ArtistProfile() {
   const [purchaseProduct, setPurchaseProduct] = useState<Product | null>(null)
   const [joinMembership, setJoinMembership] = useState<Membership | null>(null)
   const [mockToast, setMockToast] = useState<string | null>(null)
+  const [aboutOpen, setAboutOpen] = useState(false)
+  const [timeDetailEvent, setTimeDetailEvent] = useState<ScheduleEventRow | null>(null)
 
   const isDemo = artistId?.startsWith('demo-artist-')
 
@@ -132,10 +58,8 @@ export function ArtistProfile() {
           bio: profile.bio,
         })
         setEvents(profile.events as ScheduleEventRow[])
-        setProducts(profile.products as { id: string; title: string; image_url: string | null; type: string; price_cents?: number }[])
-        setMemberships(
-          profile.memberships as { id: string; title: string; price_cents: number; image_url: string | null }[]
-        )
+        setProducts(profile.products as Product[])
+        setMemberships(profile.memberships as Membership[])
       } else if (demo) {
         setArtist({
           id: artistId,
@@ -176,7 +100,7 @@ export function ArtistProfile() {
       .select('id, title, image_url, starts_at, ends_at')
       .eq('artist_id', artistId)
       .order('starts_at', { ascending: true })
-      .limit(6)
+      .limit(12)
       .then(({ data }) => setEvents((data ?? []) as ScheduleEventRow[]))
 
     supabase
@@ -184,7 +108,7 @@ export function ArtistProfile() {
       .select('id, title, image_url, type, price_cents')
       .eq('artist_id', artistId)
       .limit(12)
-      .then(({ data }) => setProducts((data ?? []) as typeof products))
+      .then(({ data }) => setProducts((data ?? []) as Product[]))
 
     supabase
       .from('memberships')
@@ -193,7 +117,6 @@ export function ArtistProfile() {
       .then(({ data }) => setMemberships((data ?? []) as Membership[]))
   }, [artistId, isDemo])
 
-  // Open product or membership modal from URL (?product=id or ?membership=id)
   useEffect(() => {
     if (loading || !artist) return
     const productId = searchParams.get('product')
@@ -226,12 +149,12 @@ export function ArtistProfile() {
 
   const sortedScheduleEvents = useMemo(
     () => sortEventsForLiveSchedule(events, scheduleNow),
-    [events, scheduleNow]
+    [events, scheduleNow],
   )
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--signal-white)]">
+      <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-black text-white/50">
         Loading…
       </div>
     )
@@ -239,14 +162,14 @@ export function ArtistProfile() {
 
   if (notFound || !artist) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--signal-white)] px-4 text-center max-w-md mx-auto">
-        <p className="text-[var(--signal-ink)] font-medium mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+      <div className="mx-auto flex h-full min-h-0 max-w-md flex-1 flex-col items-center justify-center bg-black px-4 text-center">
+        <p className="mb-2 font-medium text-white/90" style={{ fontFamily: 'var(--font-display)' }}>
           Profile isn’t available
         </p>
-        <p className="text-[var(--signal-ink-muted)] text-sm mb-6 leading-relaxed">
+        <p className="mb-6 text-sm leading-relaxed text-white/45">
           This page may be hidden while the artist is offline, or the link might be incorrect.
         </p>
-        <Link to="/" className="text-[var(--signal-gold)] hover:opacity-80 text-sm">
+        <Link to="/" className="text-sm text-[var(--signal-gold)] hover:opacity-80">
           Back to feed
         </Link>
       </div>
@@ -258,26 +181,48 @@ export function ArtistProfile() {
     setTimeout(() => setMockToast(null), 2500)
   }
 
+  const bioText = artist.bio?.trim()
+
   return (
-    <div className="min-h-screen bg-[var(--signal-white)]">
-      {/* Back to feed */}
-      <div className="absolute top-4 left-4 z-10">
+    <div className="h-full min-h-0 w-full overflow-y-auto overflow-x-hidden bg-black text-white [-webkit-overflow-scrolling:touch]">
+      {timeDetailEvent && (
+        <ScheduleTimeSheet
+          event={timeDetailEvent}
+          nowMs={scheduleNow}
+          open={!!timeDetailEvent}
+          onClose={() => setTimeDetailEvent(null)}
+        />
+      )}
+
+      {bioText && (
+        <AboutSheet bio={bioText} open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      )}
+
+      <div className="fixed left-4 top-[max(4.25rem,env(safe-area-inset-top)+3.25rem)] z-40 md:left-6">
         <Link
           to="/"
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-black/40 text-white text-sm hover:bg-black/60"
+          className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm text-white/90 backdrop-blur-md transition-colors duration-500 [transition-timing-function:cubic-bezier(0.25,0.8,0.25,1)] hover:bg-white/20"
         >
           <span aria-hidden>←</span> Feed
         </Link>
       </div>
 
-      {/* Mock toast */}
+      {bioText && (
+        <button
+          type="button"
+          className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-40 rounded-full bg-white/15 px-5 py-2.5 text-xs font-medium uppercase tracking-[0.2em] text-white backdrop-blur-md transition-colors duration-500 [transition-timing-function:cubic-bezier(0.25,0.8,0.25,1)] hover:bg-white/25"
+          onClick={() => setAboutOpen(true)}
+        >
+          About
+        </button>
+      )}
+
       {mockToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-[var(--signal-ink)] text-white text-sm shadow-lg">
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white shadow-lg ring-1 ring-white/10">
           {mockToast}
         </div>
       )}
 
-      {/* Purchase product modal */}
       {purchaseProduct && (
         <CheckoutDrawer
           open={!!purchaseProduct}
@@ -294,7 +239,6 @@ export function ArtistProfile() {
         />
       )}
 
-      {/* Join membership modal */}
       {joinMembership && (
         <CheckoutDrawer
           open={!!joinMembership}
@@ -311,152 +255,75 @@ export function ArtistProfile() {
         />
       )}
 
-      {/* Hero: full-bleed, tall so portrait image fills */}
-      <div className="relative min-h-[60vh] w-full bg-[var(--signal-silver-light)]">
-        {artist.avatar_url && (
+      {/* Image-first hero: full viewport, text overlay only */}
+      <div className="relative min-h-[100dvh] w-full bg-neutral-950">
+        {artist.avatar_url ? (
           <img
             src={artist.avatar_url}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover object-center"
+            className="absolute inset-0 h-full w-full object-cover"
           />
+        ) : (
+          <div className="absolute inset-0 bg-neutral-900" />
         )}
-        <div className="absolute bottom-0 left-0 right-0 p-6 pt-24 bg-gradient-to-t from-black/70 via-black/20 to-transparent">
-          <h1 className="text-3xl md:text-4xl font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 p-6 pb-[max(2rem,env(safe-area-inset-bottom))] pt-32">
+          <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl" style={{ fontFamily: 'var(--font-display)' }}>
             {artist.display_name}
           </h1>
           {artist.handle && (
-            <p className="text-white/90 text-sm mt-1">@{artist.handle}</p>
+            <p className="mt-2 text-sm text-white/65">@{artist.handle}</p>
           )}
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-10">
-        {/* About / Bio */}
-        {artist.bio && (
-          <section className="mb-12">
-            <h2 className="text-lg font-semibold text-[var(--signal-ink)] mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              About
-            </h2>
-            <p className="text-[var(--signal-ink-muted)] leading-relaxed max-w-2xl whitespace-pre-wrap">
-              {stripCitationMarkers(artist.bio)}
-            </p>
-          </section>
-        )}
+      {/* Horizontal rails — image = label; no white section blocks */}
+      {sortedScheduleEvents.length > 0 && (
+        <ArtistHorizontalRail label="Live">
+          {sortedScheduleEvents.map((e) => (
+            <ArtistEventRailCard
+              key={e.id}
+              event={e}
+              nowMs={scheduleNow}
+              artistAvatarUrl={artist.avatar_url}
+              to={e.id.startsWith('demo-') ? `/live/demo-1` : `/live/${e.id}`}
+              onTimeClick={() => setTimeDetailEvent(e)}
+            />
+          ))}
+        </ArtistHorizontalRail>
+      )}
 
-        {/* Live schedule */}
-        <section className="mb-12">
-          <h2 className="text-lg font-semibold text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>
-            Live schedule
-          </h2>
-          {events.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {sortedScheduleEvents.map((e) => (
-                <LiveScheduleEventCard
-                  key={e.id}
-                  event={e}
-                  nowMs={scheduleNow}
-                  artistAvatarUrl={artist.avatar_url}
-                  to={e.id.startsWith('demo-') ? `/live/demo-1` : `/live/${e.id}`}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-[var(--signal-ink-muted)] text-sm">No upcoming events. Check back later.</p>
-          )}
-        </section>
+      {sortedScheduleEvents.length === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-white/40">No scheduled events yet.</p>
+      )}
 
-        {/* Membership tiers */}
-        <section className="mb-12">
-          <h2 className="text-lg font-semibold text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>
-            Membership tiers
-          </h2>
-          {memberships.length > 0 ? (
-            <div className="flex flex-wrap gap-3">
-              {memberships.map((m) => {
-                const tierCardImg = catalogCardImageUrl(m.image_url, artist.avatar_url)
-                return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setJoinMembership(m)}
-                  className="rounded-[var(--radius-card)] border border-[var(--signal-gold)]/30 bg-[var(--signal-white-pure)] min-w-[160px] max-w-[220px] text-left overflow-hidden hover:border-[var(--signal-gold)]/60 hover:bg-[var(--signal-silver-light)]/30 transition-colors"
-                >
-                  <div className="aspect-[3/4] w-full overflow-hidden bg-[var(--signal-silver-light)]/50">
-                    {tierCardImg ? (
-                      <img
-                        src={tierCardImg}
-                        alt=""
-                        className="h-full w-full object-cover object-center"
-                        onError={(e) => fallbackToArtistPortrait(e, artist.avatar_url)}
-                      />
-                    ) : (
-                      <div className="h-full w-full flex items-center justify-center px-2">
-                        <span className="text-xs text-[var(--signal-ink-muted)] text-center">{m.title}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="px-3 py-2.5">
-                    <p className="font-medium text-[var(--signal-ink)] text-sm truncate">{m.title}</p>
-                    <p className="text-sm text-[var(--signal-gold)] mt-0.5">{formatGbp(m.price_cents)}/mo</p>
-                    <span className="text-xs text-[var(--signal-ink-muted)] mt-1 block">Tap to join</span>
-                  </div>
-                </button>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-[var(--signal-ink-muted)] text-sm">No membership tiers yet.</p>
-          )}
-        </section>
+      {memberships.length > 0 && (
+        <ArtistHorizontalRail label="Membership">
+          {memberships.map((m) => (
+            <ArtistMembershipTile
+              key={m.id}
+              m={m}
+              artistAvatarUrl={artist.avatar_url}
+              onSelect={() => setJoinMembership(m)}
+            />
+          ))}
+        </ArtistHorizontalRail>
+      )}
 
-        {/* Tracks & merch */}
-        <section>
-          <h2 className="text-lg font-semibold text-[var(--signal-ink)] mb-4" style={{ fontFamily: 'var(--font-display)' }}>
-            Tracks & merch
-          </h2>
-          {products.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {products.map((p) => {
-                const productCardImg = catalogCardImageUrl(p.image_url, artist.avatar_url)
-                return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPurchaseProduct(p)}
-                  className="rounded-[var(--radius-card)] overflow-hidden border border-[var(--signal-silver-light)] bg-white text-left hover:border-[var(--signal-gold)]/50 hover:shadow-md transition-all"
-                >
-                  <div className="aspect-[3/4] w-full overflow-hidden bg-[var(--signal-silver-light)]">
-                    {productCardImg ? (
-                      <img
-                        src={productCardImg}
-                        alt=""
-                        className="h-full w-full object-cover object-center"
-                        onError={(e) => fallbackToArtistPortrait(e, artist.avatar_url)}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center p-3">
-                        <span className="text-xs text-[var(--signal-ink-muted)] text-center line-clamp-4">{p.title}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-2">
-                    <p className="text-sm font-medium text-[var(--signal-ink)] truncate">{p.title}</p>
-                    <p className="text-xs text-[var(--signal-ink-muted)] capitalize">{p.type}</p>
-                    {p.price_cents != null && (
-                      <p className="text-xs text-[var(--signal-gold)] mt-0.5 font-medium">
-                        {formatGbp(p.price_cents)}
-                      </p>
-                    )}
-                  </div>
-                </button>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-[var(--signal-ink-muted)] text-sm">No tracks or merch yet. Follow to get notified when they drop.</p>
-          )}
-        </section>
-      </div>
+      {products.length > 0 && (
+        <ArtistHorizontalRail label="Tracks & merch">
+          {products.map((p) => (
+            <ArtistProductTile
+              key={p.id}
+              p={p}
+              artistAvatarUrl={artist.avatar_url}
+              onSelect={() => setPurchaseProduct(p)}
+            />
+          ))}
+        </ArtistHorizontalRail>
+      )}
+
+      <div className="h-[min(8vh,4rem)] w-full shrink-0" aria-hidden />
     </div>
   )
 }

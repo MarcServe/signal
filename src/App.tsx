@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { Header } from './components/Header'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
+import { ImmersiveLayout } from './layouts/ImmersiveLayout'
 import { Discovery } from './pages/Discovery'
 import { Login } from './pages/Login'
 import { SignUp } from './pages/SignUp'
@@ -49,6 +50,7 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <div className="h-full min-h-0">
         <Routes>
           <Route path="/live/:streamId" element={<LiveView />} />
           <Route element={<AuthLayout />}>
@@ -57,9 +59,11 @@ function App() {
             <Route path="/become-artist" element={<BecomeArtist />} />
             <Route path="/onboarding" element={<Onboarding />} />
           </Route>
-          <Route element={<MainLayout />}>
+          <Route element={<ImmersiveLayout />}>
             <Route path="/" element={<Discovery />} />
             <Route path="/artist/:artistId" element={<ArtistProfile />} />
+          </Route>
+          <Route element={<MainLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/avatar/create" element={<AvatarCreate />} />
@@ -71,6 +75,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
+        </div>
       </AuthProvider>
     </BrowserRouter>
   )

@@ -38,17 +38,29 @@
   --duration-normal: 250ms;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  height: 100%;
   font-family: var(--font-body);
   background: var(--signal-white);
   color: var(--signal-ink);
   -webkit-font-smoothing: antialiased;
 }
 
+/* Immersive (home + artist): full-bleed black canvas; scope heavy rules to .immersive-root */
+.immersive-root {
+  overflow-x: hidden;
+  transition: background-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
 #root {
   min-height: 100vh;
   min-height: 100dvh;
+  height: 100%;
 }
 
 /* Masonry grid (Pinterest-style) */

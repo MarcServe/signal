@@ -89,11 +89,16 @@ export function LiveView() {
   const [chatInput, setChatInput] = useState('')
   const [chatSending, setChatSending] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+  const [streamFetchReady, setStreamFetchReady] = useState(false)
+  const [streamFetchError, setStreamFetchError] = useState<string | null>(null)
+  const [hlsError, setHlsError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!streamId) return
     const demo = getDemoStream(streamId)
     if (demo) {
+      setStreamFetchError(null)
+      setStreamFetchReady(true)
       setStream({
         id: demo.id,
         title: demo.title,
@@ -106,30 +111,50 @@ export function LiveView() {
       setAvatarUrl(demo.avatar_image_url)
       return
     }
-    supabase
+    setStreamFetchReady(false)
+    setStreamFetchError(null)
+    setStream(null)
+    setArtist(null)
+    setAvatarUrl(null)
+    void supabase
       .from('streams')
       .select('id, title, playback_url, stream_key, artist_id, is_live')
       .eq('id', streamId)
-      .single()
-      .then(({ data }) => {
-        setStream(data ?? null)
-        if (data?.artist_id) {
-          supabase
+      .maybeSingle()
+      .then(({ data, error }) => {
+        setStreamFetchReady(true)
+        if (error) {
+          setStreamFetchError(error.message || 'Could not load stream.')
+          return
+        }
+        if (!data) {
+          setStreamFetchError(
+            'Stream not found or access denied. Apply migration 00012 in Supabase if you are live but hidden from discovery, and click “Show as live on Signal” in the dashboard.',
+          )
+          return
+        }
+        setStream(data)
+        if (data.artist_id) {
+          void supabase
             .from('artists')
             .select('display_name, avatar_url')
             .eq('id', data.artist_id)
-            .single()
+            .maybeSingle()
             .then(({ data: a }) => setArtist(a ?? null))
-          supabase
+          void supabase
             .from('avatars')
             .select('image_url')
             .eq('artist_id', data.artist_id)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single()
+            .maybeSingle()
             .then(({ data: av }) => setAvatarUrl(av?.image_url ?? null))
         }
       })
+  }, [streamId])
+
+  useEffect(() => {
+    setHlsError(null)
   }, [streamId])
 
   /** Keep “Live” badge in sync when the artist toggles `is_live` from Dashboard. */
@@ -283,10 +308,26 @@ export function LiveView() {
     onSwipeRight: goPrev,
   })
 
-  if (!stream) {
+  if (!streamFetchReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--signal-ink)] text-white">
         Loading…
+      </div>
+    )
+  }
+
+  if (!stream) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[var(--signal-ink)] text-white px-6 text-center">
+        <p className="text-lg font-medium">Can’t open this stream</p>
+        <p className="text-sm text-white/70 max-w-md">{streamFetchError ?? 'Unknown error.'}</p>
+        <button
+          type="button"
+          onClick={() => navigate('/', { replace: true })}
+          className="mt-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm"
+        >
+          Back to home
+        </button>
       </div>
     )
   }
@@ -311,14 +352,25 @@ export function LiveView() {
             allowFullScreen
           />
         ) : playbackSrc ? (
-          <HlsVideo
-            className="max-h-full w-full object-contain"
-            src={playbackSrc}
-            autoPlay
-            playsInline
-            muted
-            controls
-          />
+          <>
+            <HlsVideo
+              className="max-h-full w-full object-contain"
+              src={playbackSrc}
+              autoPlay
+              playsInline
+              muted
+              controls
+              onFatalMediaError={(msg) => setHlsError(msg)}
+            />
+            {hlsError && (
+              <div className="absolute inset-x-0 bottom-24 flex justify-center px-4 pointer-events-none">
+                <p className="text-xs text-amber-200/95 bg-black/70 rounded-lg px-3 py-2 max-w-lg text-center pointer-events-auto">
+                  {hlsError} — Check that <code className="text-amber-100">npm run rtmp</code> is running, port 8000
+                  is free, and your OBS stream key matches the dashboard.
+                </p>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-white/60 text-center p-4">
             <p className="text-lg">No stream URL configured.</p>

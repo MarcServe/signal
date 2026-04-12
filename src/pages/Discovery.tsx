@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { MasonryGrid } from '../design-system/MasonryGrid'
 import { DiscoveryCard } from '../components/DiscoveryCard'
-import { DiscoveryMobileCarousel } from '../components/DiscoveryMobileCarousel'
+import { DiscoveryMobileStack } from '../components/DiscoveryMobileStack'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { DEMO_FEED_ITEMS } from '../data/demoFeed'
@@ -166,50 +166,56 @@ export function Discovery() {
   const feedBootstrapping = authLoading || (user && !profile) || (loading && items.length === 0)
 
   return (
-    <div className="box-border flex max-w-full min-h-0 flex-1 flex-col p-[var(--gutter)] max-md:h-full max-md:min-h-[calc(100svh-3.5rem)] max-md:p-0 md:min-h-screen">
+    <div className="box-border flex h-full min-h-0 w-full max-w-full flex-1 flex-col overflow-hidden bg-black p-[var(--gutter)] max-md:p-0 md:min-h-screen md:overflow-visible">
       {feedBootstrapping && (
-        <div className="sticky top-0 z-20 flex min-h-[40vh] items-center justify-center px-4 text-sm text-[var(--signal-ink-muted)]">
+        <div className="sticky top-0 z-20 flex min-h-[40vh] items-center justify-center px-4 text-sm text-white/50">
           Loading feed…
         </div>
       )}
       {feedFallbackReason === 'not_configured' && (
-        <div className="sticky top-0 z-20 border-b border-amber-200/80 bg-amber-50 px-4 py-2 text-center text-xs text-amber-950">
+        <div className="sticky top-0 z-20 border-b border-amber-500/30 bg-amber-950/90 px-4 py-2 text-center text-xs text-amber-100 backdrop-blur-sm">
           Live data isn&apos;t wired up for this build yet. Showing preview cards only — your team can connect the app
           database in deployment settings and publish again.
         </div>
       )}
       {feedFallbackReason === 'empty_or_error' && isSupabaseConfigured && (
-        <div className="sticky top-0 z-20 border-b border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]/95 px-4 py-2 text-center text-xs text-[var(--signal-ink-muted)] backdrop-blur-sm">
+        <div className="sticky top-0 z-20 border-b border-white/10 bg-black/80 px-4 py-2 text-center text-xs text-white/60 backdrop-blur-sm">
           We couldn&apos;t load the live feed (empty result or connection issue). If you&apos;re signed in as an artist, your
           profile may still appear first. Preview cards fill the rest — try again shortly or check your deployment
           configuration.
         </div>
       )}
       {feedQuery && (
-        <div className="sticky top-0 z-20 border-b border-[var(--signal-silver-light)] bg-[var(--signal-white-pure)]/95 px-4 py-2 text-center text-xs text-[var(--signal-ink-muted)] backdrop-blur-sm">
+        <div className="sticky top-0 z-20 border-b border-white/10 bg-black/75 px-4 py-2 text-center text-xs text-white/65 backdrop-blur-sm">
           Filtering by &ldquo;{feedQuery}&rdquo; — {filteredItems.length} result{filteredItems.length === 1 ? '' : 's'}
         </div>
       )}
       {!feedBootstrapping && (
-        <div className="flex min-h-0 flex-1 flex-col max-md:min-h-[calc(100svh-3.5rem)] md:min-h-0">
-          {/* Mobile: infinite horizontal snap carousel + idle auto-advance */}
-          <DiscoveryMobileCarousel items={filteredItems} />
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden md:min-h-0 md:overflow-visible">
+          {/* Mobile: full-screen vertical snap stack — parent clips to viewport so sticky uses this scrollport */}
+          <DiscoveryMobileStack
+            items={filteredItems}
+            onNearEnd={() => {
+              if (!hasMore || loading || loadingRef.current) return
+              void loadPage(offset)
+            }}
+          />
           {/* Tablet/desktop: masonry */}
-          <div className="hidden min-h-0 flex-1 md:block">
+          <div className="hidden min-h-0 flex-1 md:block md:bg-black md:px-4 md:pb-10 md:pt-4">
             <MasonryGrid
               items={filteredItems}
-              renderItem={(item) => <DiscoveryCard item={item} />}
+              renderItem={(item) => <DiscoveryCard item={item} variant="immersive" />}
               keyExtractor={(item) => `${item.item_type}-${item.id}`}
             />
           </div>
         </div>
       )}
       {items.length > 0 && feedQuery && filteredItems.length === 0 && !loading && (
-        <div className="py-12 text-center text-[var(--signal-ink-muted)] px-4">
+        <div className="py-12 text-center text-white/55 px-4">
           No cards match &ldquo;{feedQuery}&rdquo;. Try another word or{' '}
           <button
             type="button"
-            className="text-[var(--signal-ink)] underline decoration-[var(--signal-silver-light)] hover:decoration-[var(--signal-gold)]"
+            className="text-white underline decoration-white/30 hover:decoration-[var(--signal-gold)]"
             onClick={() => navigate({ pathname: '/', search: '' }, { replace: true })}
           >
             clear search
@@ -218,12 +224,12 @@ export function Discovery() {
         </div>
       )}
       {items.length === 0 && !loading && (
-        <div className="py-12 text-center text-[var(--signal-ink-muted)]">
+        <div className="py-12 text-center text-white/55">
           No items yet. Be the first to go live or add content.
         </div>
       )}
       {loading && items.length > 0 && (
-        <div className="py-6 text-center text-sm text-[var(--signal-ink-muted)]">
+        <div className="py-6 text-center text-sm text-white/45">
           Loading…
         </div>
       )}

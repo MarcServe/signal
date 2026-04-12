@@ -33,6 +33,19 @@ export function isLanOrLoopbackPlaybackUrl(urlStr: string): boolean {
 }
 
 /**
+ * RTMP ingest URL shown in Dashboard → Go live (OBS “Server”).
+ * Dev: matches local `npm run rtmp` (port 1935, app name `live`).
+ * Production: set `VITE_RTMP_URL` on the host that runs ingest.
+ */
+export function getRtmpIngestUrl(): string {
+  const raw = (import.meta as ImportMeta & { env?: { VITE_RTMP_URL?: string } }).env?.VITE_RTMP_URL
+  const trimmed = typeof raw === 'string' ? raw.trim() : ''
+  if (trimmed) return trimmed
+  if (import.meta.env.DEV) return 'rtmp://127.0.0.1:1935/live'
+  return 'rtmp://your-server/live'
+}
+
+/**
  * HLS server root for building playlist URLs.
  * Production: set VITE_HLS_BASE_URL (no localhost default).
  * Dev: defaults to http://127.0.0.1:8000 (Node-Media-Server HTTP).

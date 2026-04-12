@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,9 +12,7 @@ import {
 } from '../lib/catalogImage'
 import { normalizePublicHandle, stripCitationMarkers } from '../lib/cleanBioText'
 import { formatGbp } from '../lib/currency'
-import {
-  resolveStreamPlaybackUrl,
-} from '../lib/hlsPlayback'
+import { resolveStreamPlaybackUrl, getRtmpIngestUrl } from '../lib/hlsPlayback'
 import { HlsVideo } from '../components/HlsVideo'
 import { FanDiscoverSpotlight } from '../components/FanDiscoverSpotlight'
 
@@ -137,10 +135,7 @@ export function Dashboard() {
   const [payoutsSectionOpen, setPayoutsSectionOpen] = useState(false)
   const [musicSectionOpen, setMusicSectionOpen] = useState(false)
   const [goLiveSectionOpen, setGoLiveSectionOpen] = useState(false)
-  /** Baked in at Vite build time. */
-  const rtmpIngestDisplay =
-    String((import.meta as { env?: { VITE_RTMP_URL?: string } }).env?.VITE_RTMP_URL ?? '').trim() ||
-    'rtmp://your-server/live'
+  const rtmpIngestDisplay = getRtmpIngestUrl()
   const [backfillBusy, setBackfillBusy] = useState(false)
   const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null)
   const [backfillNotice, setBackfillNotice] = useState<string | null>(null)
@@ -448,6 +443,13 @@ export function Dashboard() {
     const row = streams.find((s) => s.id === broadcastStreamId)
     setStreamKeyDraft(row?.stream_key ?? '')
   }, [broadcastStreamId, streams])
+
+  /** Public watch URL for this broadcast (`/live/:streamId` on the current site origin). */
+  const liveWatchPageUrl = useMemo(() => {
+    if (!broadcastStreamId) return ''
+    if (typeof window === 'undefined') return ''
+    return `${window.location.origin}/live/${broadcastStreamId}`
+  }, [broadcastStreamId])
 
   /** Open the right Studio form when arriving from the sidebar “+” menu (?add=product|event|membership). */
   useEffect(() => {
@@ -1125,6 +1127,31 @@ export function Dashboard() {
                           Copy
                         </button>
                       </div>
+
+                      {liveWatchPageUrl ? (
+                        <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--signal-gold)]/10 border border-[var(--signal-gold)]/25">
+                          <div className="min-w-0 pr-2">
+                            <p className="text-[10px] font-medium text-[var(--signal-ink-muted)] uppercase tracking-wide mb-0.5">
+                              Watch page (share in browser)
+                            </p>
+                            <code className="text-sm text-[var(--signal-ink)] break-all">{liveWatchPageUrl}</code>
+                            <p className="text-[10px] text-[var(--signal-silver)] mt-1">
+                              Fans open this link to watch in Signal. Same path on production after you deploy.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-[var(--signal-gold)] hover:opacity-80 px-3 py-1.5 rounded-md bg-[var(--signal-white-pure)] border border-[var(--signal-silver-light)] shadow-sm shrink-0"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(liveWatchPageUrl).then(() =>
+                                setGoLiveNotice({ type: 'ok', text: 'Watch link copied.' })
+                              )
+                            }}
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 

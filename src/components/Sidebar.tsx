@@ -4,7 +4,7 @@ import { ArtistQuickCreateModal } from './ArtistQuickCreateModal'
 import { useAuth } from '../contexts/AuthContext'
 
 /**
- * Minimal rail: Home · Studio · Quick add (artists) or Become an artist (signed-in fans) · Settings.
+ * Minimal rail: Home · Studio/Dashboard · Quick add (artists) or Become an artist (signed-in fans) · Settings.
  * Messages & notifications live under Settings to keep the chrome quiet.
  */
 export function Sidebar() {
@@ -13,7 +13,7 @@ export function Sidebar() {
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
 
   const studioTo = '/dashboard'
-  const studioLabel = profile?.role === 'artist' ? 'Studio' : 'Home'
+  const studioLabel = profile?.role === 'artist' ? 'Studio' : 'Dashboard'
   const studioActive =
     location.pathname === '/dashboard' ||
     (profile?.role === 'artist' && location.pathname.startsWith('/avatar'))
